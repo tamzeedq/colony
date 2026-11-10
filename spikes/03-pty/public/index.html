@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Colony PTY spike</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; }
+    #term { position: absolute; inset: 8px; }
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script>
+    const term = new Terminal({ cursorBlink: true, fontFamily: 'Consolas, monospace', fontSize: 14 });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('term'));
+    fit.fit();
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/pty?cols=${term.cols}&rows=${term.rows}`);
+    ws.binaryType = 'arraybuffer';
+    const enc = new TextEncoder();
+    const send = (bytes) => { if (ws.readyState === WebSocket.OPEN) ws.send(bytes); };
+
+    ws.onmessage = (e) => term.write(typeof e.data === 'string' ? e.data : new Uint8Array(e.data));
+    ws.onclose = () => term.write('\r\n\x1b[33m[disconnected]\x1b[0m\r\n');
+    // Keyboard input goes as binary frames so it can never be mistaken for a JSON control frame.
+    term.onData((d) => send(enc.encode(d)));
+    term.onBinary((d) => send(Uint8Array.from(d, (c) => c.charCodeAt(0))));
+    const sendSize = () => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    };
+    term.onResize(sendSize);
+    ws.onopen = sendSize;
+    new ResizeObserver(() => fit.fit()).observe(document.getElementById('term'));
+    term.focus();
+  </script>
+</body>
+</html>

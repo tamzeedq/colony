@@ -1,0 +1,14 @@
+{
+  "name": "colony",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Run and command teams of Claude Code agents in Docker across your projects.",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:ui": "npm run dev -w @colony/ui",
+    "build:ui": "npm run build -w @colony/ui",
+    "agent:image": "docker build -f docker/agent.Dockerfile -t colony-agent:dev docker",
+    "spike:headless": "node spikes/01-headless/run.mjs"
+  },
+  "engines": { "node": ">=22" }
+}

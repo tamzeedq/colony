@@ -1,0 +1,94 @@
+/* Colony · Ops Deck — Tailwind v4 theme.
+   Import once, after Tailwind:  @import "tailwindcss"; @import "./theme.css";
+   Gives you classes like bg-surface, border-line, text-ink-muted, text-st-run, bg-st-you/12,
+   font-display, rounded-lg, shadow-raised, ease-standard, animate-attention. */
+
+/* Fonts: self-hosted via @fontsource in src/fonts.ts (Chakra Petch, IBM Plex Sans, JetBrains Mono). */
+
+@theme {
+  /* ground + ink */
+  --color-hud: #0A0D11;
+  --color-well: #0B0E12;
+  --color-ground: #0E1116;  /* app background (named 'ground' so it never clashes with text-base) */
+  --color-surface: #151A21;
+  --color-raised: #1C232C;
+  --color-line-soft: #222A35;
+  --color-line: #2A333F;
+  --color-line-strong: #3A4452;
+  --color-ink-dim: #8592A3;
+  --color-ink-muted: #A3AEBD;
+  --color-ink-soft: #C7CFDA;
+  --color-ink: #E6EAF0;
+  --color-you: #F0B44C;       /* amber = actions that act as you */
+  --color-you-ink: #1A1405;
+
+  /* status — always paired with a glyph + label (see src/design/status.ts) */
+  --color-st-idle: #8592A3;
+  --color-st-think: #A99BF5;
+  --color-st-run: #5AA9F0;
+  --color-st-you: #F5B83D;
+  --color-st-blocked: #C79A5B;
+  --color-st-error: #F2706A;
+  --color-st-paused: #B8C1CC;
+  --color-st-done: #5CC98A;
+
+  /* diff */
+  --color-diff-add: #8FE0B0;
+  --color-diff-del: #F7A39E;
+
+  --font-display: "Chakra Petch", sans-serif;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+
+  --shadow-raised: 0 12px 30px rgb(0 0 0 / 0.5);
+  --shadow-drawer: -24px 0 48px rgb(0 0 0 / 0.5);
+
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-enter: cubic-bezier(0, 0, .2, 1);
+  --ease-exit: cubic-bezier(.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+
+  --animate-attention: attention 1.6s ease-out infinite;
+  --animate-breathe: breathe 1.2s ease-in-out infinite;
+  --animate-march: march 1.4s linear infinite;
+  --animate-shake: shake 0.4s ease-in-out 2;
+  --animate-pop: pop 0.4s var(--ease-spring);
+
+  @keyframes attention {
+    0% { box-shadow: 0 0 0 0 rgb(245 184 61 / 0.6); }
+    70% { box-shadow: 0 0 0 10px rgb(245 184 61 / 0); }
+    100% { box-shadow: 0 0 0 0 rgb(245 184 61 / 0); }
+  }
+  @keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+  @keyframes march { to { background-position: 24px 0; } }
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-2px); } 40%, 80% { transform: translateX(2px); } }
+  @keyframes pop { 0% { transform: scale(.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+}
+
+@layer base {
+  html { color-scheme: dark; }
+  body { background: var(--color-ground); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; }
+  :focus-visible { outline: 2px solid var(--color-you); outline-offset: 2px; }
+}
+
+@utility text-section { font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: .1em; text-transform: uppercase; }
+@utility text-label { font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--color-ink-dim); }
+@utility text-numeral { font-family: var(--font-display); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Live link line between stations (map fallback when Pixi is off) */
+@utility link-live {
+  background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 12px);
+  animation: var(--animate-march);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 80ms !important; }
+  .animate-attention { box-shadow: 0 0 0 2px var(--color-st-you); }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "colony-spike-03-pty",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "ws": "^8.18.0"
+  }
+}

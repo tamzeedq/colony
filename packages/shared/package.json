@@ -1,0 +1,23 @@
+{
+  "name": "@colony/shared",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Colony domain types and wire-protocol schemas shared by the UI, control plane and agent runner.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "~5.6.3"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}
