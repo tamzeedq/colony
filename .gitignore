@@ -6,3 +6,4 @@ dist
 .colony/
 *.log
 .DS_Store
+docker/runner/

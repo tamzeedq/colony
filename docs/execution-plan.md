@@ -93,14 +93,17 @@ Proved the risky parts before building anything else. Details and results live i
 - [x] `@colony/shared`: domain types, wire protocol, Claude stream → ActivityEvent mapper, tested on a real recording.
 - [x] Role prompts in `roles/`.
 
-### Phase 1 — Control plane core (≈1 week)
-- [ ] Data model: `projects`, `agents`, `tasks`, `events`, `alerts`, `budgets`.
-- [ ] Docker driver: create/start/stop/remove agent containers, per-project network, resource limits, health checks, cleanup on crash.
-- [ ] Git service: bare repo per project (init new or clone from GitHub), worktree + branch per agent.
-- [ ] agent-runner ↔ control-plane WS protocol; event persistence; UI WS fan-out.
-- [ ] REST: projects CRUD, spawn/pause/resume/kill/restart agent, send message, change model (restart with resumed session), edit role prompt.
-- [ ] Budget guard: track `usage` events, auto-pause an agent or project at its cap, raise an alert.
-**Exit:** drive everything via curl/HTTP file. Multiple agents in multiple projects, events streaming.
+### Phase 1 — Control plane core ✅ done 2026-11-10
+Spec: `docs/phase1.md`. End-to-end check: `spikes/04-e2e/run.mjs` (PASS: project → agent → commit + push → approved merge lands on main → spend recorded → cleanup).
+- [x] Data model in `node:sqlite` (`apps/control-plane/src/db.ts`): projects, agents (token hashes), events, alerts, merge_requests, quests, kv, usage_daily.
+- [x] Docker driver (`src/infra/docker.ts`): per-project network, locked-down agent containers (non-root, all caps dropped, no-new-privileges, named volumes only), stats, reconcile on boot.
+- [x] Git: a per-project **git server container** instead of worktrees. Agents clone/push over `git://git/repo.git`; a pre-receive hook rejects pushes to `main`; merges run inside the git container only after approval.
+- [x] Runner (`packages/agent-runner`, baked into `colony-agent:dev`): WS protocol, workspace setup, long-lived `claude -p`, interrupt via stream-json control request, pause/resume, model switch with `--resume`, crash restart.
+- [x] REST + WS per `docs/phase1.md`; events persisted and fanned out to UI clients.
+- [x] Guards: per-agent budget cap, project daily cap, plan-usage warn (70%) / pause workers (90%). Verified live: real usage at 93% paused a worker.
+- [x] **Admin token required** on REST and the UI stream (`.colony/admin-token`, host only). Containers can reach the host even on a loopback-only bind, so the bind address protects nothing; a container calling approve gets 401.
+
+Known gaps carried forward: `contextPct` is always 0 (no honest source yet); guard thresholds are env-only (no Settings route); `resumeAfterReset` and the orchestrator reserve aren't implemented. On Windows, stopping `npm run …` can leave the `tsx` child running; run the control plane with `node --import tsx src/main.ts` when you need to stop it cleanly.
 
 ### Phase 2 — Wire the Ops Deck prototype to the backend (≈1 week)
 The second Claude Design handoff is a runnable prototype of every screen on mock data (`apps/ui`). So the "ugly UI" step is skipped, and this phase becomes wiring:

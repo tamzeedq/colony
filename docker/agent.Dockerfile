@@ -18,5 +18,8 @@ RUN git config --global user.name "Colony Agent" \
  && git config --global user.email "agent@colony.local" \
  && git config --global init.defaultBranch main
 
+# Agent runner (bundled from packages/agent-runner: `npm run build -w @colony/agent-runner`)
+COPY --chown=root:root runner/runner.mjs /opt/colony/runner.mjs
+
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["bash"]
+CMD ["node", "/opt/colony/runner.mjs"]
