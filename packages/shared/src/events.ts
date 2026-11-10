@@ -12,7 +12,7 @@
 
 import { z } from 'zod'
 import { AGENT_STATUSES } from './domain'
-import type { Agent, Alert, Project, Quest, Resources, MergeRequest, ProviderConfig, ModelInfo } from './domain'
+import type { Agent, Alert, Project, Quest, Resources, MergeRequest, ProviderConfig, ModelInfo, PlanUsage } from './domain'
 
 export const PROTOCOL_VERSION = 1
 
@@ -89,6 +89,10 @@ export const RunnerMessageSchema = z.discriminatedUnion('type', [
     totalCostUsd: z.number().optional(), // as reported by Claude Code (cumulative for the session)
   }),
   z.object({ type: z.literal('error'), message: z.string(), fatal: z.boolean().optional() }),
+  /** Subscription usage snapshot read from Claude Code's rate_limit_event (see parseRateLimitEvent). */
+  z.object({ type: z.literal('plan_usage'), usage: z.custom<PlanUsage>((v) => typeof v === 'object' && v !== null) }),
+  /** Workspace ready: cloned and on its branch. */
+  z.object({ type: z.literal('workspace'), branch: z.string(), headSha: z.string().optional() }),
 ])
 export type RunnerMessage = z.infer<typeof RunnerMessageSchema>
 
