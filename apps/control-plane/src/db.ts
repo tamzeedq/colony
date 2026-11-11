@@ -26,7 +26,7 @@ function loadSqlite(): typeof import('node:sqlite') {
   }
 }
 
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: string[] = [
   // 1: initial schema
   `
   CREATE TABLE projects (
@@ -90,6 +90,14 @@ const MIGRATIONS: string[] = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+  `,
+  // 2: cost analytics (docs/phase6.md §4). Rows written before this read as role/model 'unknown'.
+  `
+  ALTER TABLE usage_daily ADD COLUMN role TEXT;
+  ALTER TABLE usage_daily ADD COLUMN model TEXT;
+  ALTER TABLE usage_daily ADD COLUMN quests_done INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE usage_daily ADD COLUMN quests_failed INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX usage_daily_day ON usage_daily(day);
   `,
 ]
 

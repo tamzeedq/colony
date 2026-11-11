@@ -1,5 +1,5 @@
 // Typed calls for every control-plane route the UI uses (docs/phase2.md "UI action → API").
-import type { ActivityEvent, Agent, Alert, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
+import type { ActivityEvent, Agent, Alert, Analytics, AnalyticsDays, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
 import { api, apiText, enc } from './client'
 
 export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string }
@@ -52,6 +52,9 @@ export const endpoints = {
   // guards
   getGuards: () => api<Guards>('GET', '/api/guards'),
   patchGuards: (patch: Partial<Guards>) => api<Guards>('PATCH', '/api/guards', patch),
+
+  // cost analytics (docs/phase6.md §4)
+  analytics: (days: AnalyticsDays) => api<Analytics>('GET', `/api/analytics?days=${days}`),
 
   // alerts
   resolveAlert: (id: ID) => api<Alert>('POST', `/api/alerts/${enc(id)}/resolve`),

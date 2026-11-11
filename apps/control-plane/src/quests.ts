@@ -125,6 +125,7 @@ export class QuestService {
     if (statusChanged) {
       const who = by === 'you' ? 'The commander' : by.agent.callsign
       const assignee = next.assigneeId ? this.store.agents.get(next.assigneeId) : undefined
+      if (next.status === 'failed' && assignee) this.store.addQuestOutcome(assignee.agent.id, 'failed')
       if (next.status === 'failed' && assignee && assignee.agent.id !== (by === 'you' ? '' : by.agent.id)) {
         this.agents.deliver(assignee.agent.id, `[Colony] ${who} cancelled quest ${q.id} "${q.title}". Stop working on it and wait for new instructions.`)
       }
@@ -246,6 +247,7 @@ export class QuestService {
     this.store.saveQuest({ ...q, status: 'done', acceptance: mr ? q.acceptance.map((a) => ({ ...a, done: true })) : q.acceptance })
     const assignee = q.assigneeId ? this.store.agents.get(q.assigneeId) : undefined
     if (assignee) {
+      this.store.addQuestOutcome(assignee.agent.id, 'done')
       this.store.patchAgent(assignee.agent.id, {
         questsDone: assignee.agent.questsDone + 1,
         ...(assignee.agent.currentTaskId === q.id ? { currentTaskId: undefined } : {}),

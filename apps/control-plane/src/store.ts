@@ -290,14 +290,27 @@ export class Store {
     if (!rec) return
     this.rollDayIfNeeded()
     this.db.run(
-      `INSERT INTO usage_daily(day, agent_id, project_id, cost_usd, tokens) VALUES(?, ?, ?, ?, ?)
-       ON CONFLICT(day, agent_id) DO UPDATE SET cost_usd = cost_usd + excluded.cost_usd, tokens = tokens + excluded.tokens`,
-      this.day, agentId, rec.agent.projectId, costUsd, tokens,
+      `INSERT INTO usage_daily(day, agent_id, project_id, cost_usd, tokens, role, model) VALUES(?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(day, agent_id) DO UPDATE SET cost_usd = cost_usd + excluded.cost_usd, tokens = tokens + excluded.tokens,
+         role = excluded.role, model = excluded.model`,
+      this.day, agentId, rec.agent.projectId, costUsd, tokens, rec.agent.role, rec.agent.model,
     )
     this.patchAgent(agentId, {
       spendTodayUsd: round2(rec.agent.spendTodayUsd + costUsd),
       tokensToday: rec.agent.tokensToday + tokens,
     })
+  }
+  /** Count a finished or failed quest against its assignee's day (cost analytics). */
+  addQuestOutcome(agentId: string, outcome: 'done' | 'failed') {
+    const rec = this.agents.get(agentId)
+    if (!rec) return
+    this.rollDayIfNeeded()
+    const col = outcome === 'done' ? 'quests_done' : 'quests_failed'
+    this.db.run(
+      `INSERT INTO usage_daily(day, agent_id, project_id, role, model, ${col}) VALUES(?, ?, ?, ?, ?, 1)
+       ON CONFLICT(day, agent_id) DO UPDATE SET ${col} = ${col} + 1, role = excluded.role, model = excluded.model`,
+      this.day, agentId, rec.agent.projectId, rec.agent.role, rec.agent.model,
+    )
   }
   /** Reload today's per-agent spend/tokens from the DB. */
   recomputeSpend() {
