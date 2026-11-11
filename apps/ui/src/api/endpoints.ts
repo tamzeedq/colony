@@ -1,5 +1,5 @@
 // Typed calls for every control-plane route the UI uses (docs/phase2.md "UI action → API").
-import type { ActivityEvent, Agent, Alert, Analytics, AnalyticsDays, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
+import type { ActivityEvent, Agent, Alert, Analytics, AnalyticsDays, GithubConfig, GithubTokenStatus, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
 import { api, apiText, enc } from './client'
 
 export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string }
@@ -68,7 +68,18 @@ export const endpoints = {
   putProvider: (id: ProviderId, body: { apiKey?: string; baseUrl?: string; models?: string[] }) => api<ProviderView>('PUT', `/api/providers/${enc(id)}`, body),
   deleteProviderKey: (id: ProviderId) => api<ProviderView>('DELETE', `/api/providers/${enc(id)}/key`),
   testProvider: (id: ProviderId) => api<ProviderView & { ok?: boolean; error?: string; provider?: ProviderView }>('POST', `/api/providers/${enc(id)}/test`),
+
+  // GitHub (docs/phase6.md "GitHub"). The token is write-only: responses are GithubTokenStatus.
+  github: () => api<GithubTokenStatus>('GET', '/api/github'),
+  putGithubToken: (token: string) => api<GithubTokenStatus>('PUT', '/api/github/token', { token }),
+  deleteGithubToken: () => api<GithubTokenStatus>('DELETE', '/api/github/token'),
+  testGithub: () => api<GithubTokenStatus>('POST', '/api/github/test'),
+  patchProjectGithub: (projectId: ID, patch: { repo?: string | null; base?: string; mode?: GithubConfig['mode'] }) =>
+    api<Project>('PATCH', `/api/projects/${enc(projectId)}/github`, patch),
+  publishGithub: (projectId: ID) => api<GithubPublishResult>('POST', `/api/projects/${enc(projectId)}/github/publish`),
 }
+
+export interface GithubPublishResult { url?: string; branch: string; sha: string; mode: GithubConfig['mode']; mergeRequests: number }
 
 /** Pull a MergeRequest out of an approve / request-changes response (either shape). */
 export function mergeRequestFrom(r: unknown): MergeRequest | undefined {

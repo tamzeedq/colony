@@ -152,3 +152,30 @@ git update-ref "$4" "$OLD" || exit 6
 git update-ref -m "colony: revert $1" "refs/heads/$1" "$2" "$OLD" || exit 5
 echo "$OLD"
 `
+
+/** Exit codes for PUSH_REMOTE. */
+export const PUSH_EXIT = { noRef: 3, failed: 6, rejected: 10 } as const
+
+/** $1 = remote URL, $2 = local ref, $3 = remote branch. The token arrives as $COLONY_GIT_TOKEN
+ *  in the exec environment; the auth header is built here and handed to git through
+ *  GIT_CONFIG_COUNT/KEY/VALUE (environment only: not in argv, not in any config file).
+ *  Never --force. Prints the pushed sha on stdout; git's output goes to stderr. */
+export const PUSH_REMOTE = `set -u
+cd ${REPO}
+SHA=$(git rev-parse --verify --quiet "$2^{commit}") || { echo "no such ref: $2" >&2; exit 3; }
+H=$(printf 'x-access-token:%s' "\${COLONY_GIT_TOKEN:-}" | base64 | tr -d '\\n')
+unset COLONY_GIT_TOKEN
+export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_VALUE_0="Authorization: Basic $H"
+export GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1=
+OUT=$(git push --porcelain -- "$1" "$SHA:refs/heads/$3" 2>&1)
+rc=$?
+printf '%s\\n' "$OUT" >&2
+if [ $rc -ne 0 ]; then
+  case "$OUT" in
+    *non-fast-forward*|*"fetch first"*|*"[rejected]"*) exit 10 ;;
+  esac
+  exit 6
+fi
+echo "$SHA"
+`

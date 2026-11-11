@@ -88,6 +88,34 @@ export function assertMessage(message: string): string {
   return message
 }
 
+/** GitHub `owner/name`. Owner: alphanumerics and single dashes; name: [A-Za-z0-9._-]. */
+export const GITHUB_REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}\/[A-Za-z0-9._-]{1,100}$/
+
+export function isGithubRepo(repo: string): boolean {
+  return typeof repo === 'string' && GITHUB_REPO_RE.test(repo) && !/\/\.\.?$/.test(repo) && !repo.endsWith('.git')
+}
+
+/** Push target for pushToRemote: https only, no credentials, no option-looking strings. */
+export function assertPushUrl(url: string): string {
+  let ok = typeof url === 'string' && url.length <= 500 && /^https:\/\/[!-~]+$/.test(url)
+  if (ok) {
+    try {
+      const u = new URL(url)
+      ok = u.protocol === 'https:' && !u.username && !u.password
+    } catch { ok = false }
+  }
+  if (!ok) throw new InfraValidationError(`invalid push url: ${JSON.stringify(url)}`)
+  return url
+}
+
+/** Local ref for pushToRemote: refs/heads/<valid branch>. */
+export function assertLocalRef(ref: string): string {
+  if (typeof ref !== 'string' || !ref.startsWith('refs/heads/') || !isValidBranchName(ref.slice(11))) {
+    throw new InfraValidationError(`invalid ref: ${JSON.stringify(ref)}`)
+  }
+  return ref
+}
+
 export const names = {
   network: (slug: string) => `colony-proj-${slug}`,
   gitVolume: (slug: string) => `colony-git-${slug}`,

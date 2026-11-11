@@ -6,6 +6,7 @@ import { AgentManager } from './agents'
 import { AnalyticsService, registerAnalyticsRoutes } from './analytics'
 import type { Config } from './config'
 import { Db } from './db'
+import { GithubService, registerGithubRoutes } from './github'
 import { GuardService } from './guards'
 import { registerRoutes } from './http'
 import { LoopDetector } from './loops'
@@ -54,6 +55,7 @@ export interface ColonyApp {
   supabase: SupabaseService
   checkpoints: CheckpointService
   analytics: AnalyticsService
+  github: GithubService
   /** Reconcile with Docker and start listening. Returns the bound port. */
   start(port?: number, host?: string): Promise<number>
   /** Graceful shutdown. Agent containers keep running and reconnect to the next instance. */
@@ -91,6 +93,7 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   agents.hooks.afterCrash = (a, reason) => {
     if (a.role !== 'orchestrator') quests.notifyOrchestrator(a.projectId, `${a.callsign} ${reason}. The commander has been alerted; reassign its quest if this blocks progress.`)
   }
+  const github = new GithubService(store, config, infra, opts.fetch)
   const terminals = new TerminalHub(config, store, infra, log)
   const stats = new StatsPoller(store, infra, config.statsIntervalMs, log)
   stats.onDockerBack = async () => {
@@ -102,11 +105,12 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests, supabase, checkpoints })
   const analytics = new AnalyticsService(db, store)
   registerAnalyticsRoutes(fastify, analytics)
+  registerGithubRoutes(fastify, { github, store })
   registerMcp(fastify, { store, agents, quests, merges, infra, supabase })
   const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
   return {
-    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, checkpoints, analytics,
+    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, checkpoints, analytics, github,
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
       await supabase.reconcile()

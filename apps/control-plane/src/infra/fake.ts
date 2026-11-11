@@ -5,12 +5,23 @@ import { Duplex } from 'node:stream'
 import {
   ContainerNotRunningError,
   type AgentContainerSpec, type AgentExecResult, type BranchInfo, type ContainerInfo, type ContainerStats,
-  type InfraDriver, type MergeResult, type ShellHandle, RefRejectedError,
+  type InfraDriver, type MergeResult, type PushResult, type ShellHandle, RefRejectedError,
 } from './types'
-import { assertAgentId, assertBranch, assertColonyRef, assertMessage, assertSha, assertSlug, names } from './validate'
+import { assertAgentId, assertBranch, assertColonyRef, assertLocalRef, assertMessage, assertPushUrl, assertSha, assertSlug, names } from './validate'
 
 /** Branch histories saved by resetBranch, keyed by the head they had (lets undo restore them). */
 const fakeHistory = new Map<string, NonNullable<FakeBranch['commits']>>()
+
+/** A push recorded by pushToRemote (Phase 6). `token` is kept so tests can check it was
+ *  passed; `calls` records it masked. */
+export interface FakePush {
+  slug: string
+  url: string
+  srcRef: string
+  dstRef: string
+  token: string
+  sha: string
+}
 
 export interface FakeCall {
   method: keyof InfraDriver
@@ -84,6 +95,10 @@ export interface FakeDriver extends InfraDriver {
   shells: FakeShell[]
   /** Answers execInAgent (default: exit 0, empty output). */
   execHandler: FakeExecHandler
+  /** Successful pushToRemote calls, in order. */
+  pushes: FakePush[]
+  /** Next pushToRemote returns exactly this (one-shot). */
+  nextPushResult(r: PushResult): void
   reset(): void
 }
 
@@ -93,6 +108,7 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
   let pingOk = opts.ping ?? true
   const failures = new Map<string, Error>()
   let mergeOverride: MergeResult | null = null
+  let pushOverride: PushResult | null = null
 
   const self: FakeDriver = {
     calls: [],
@@ -100,7 +116,11 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
     agents: new Map(),
     volumes: new Set(),
     shells: [],
+    pushes: [],
     execHandler: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+    nextPushResult(r) {
+      pushOverride = r
+    },
 
     callsTo(method) {
       return self.calls.filter((c) => c.method === method)
@@ -134,8 +154,10 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       self.agents.clear()
       self.volumes.clear()
       self.shells.length = 0
+      self.pushes.length = 0
       failures.clear()
       mergeOverride = null
+      pushOverride = null
       pingOk = opts.ping ?? true
     },
 
@@ -296,6 +318,24 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       b.sha = o.to
       b.aheadOfMain = b.commits.filter((c) => !c.inMain).length
       return { from, to: o.to }
+    },
+    async pushToRemote(slug, o) {
+      record('pushToRemote', [slug, { ...o, token: '***' }])
+      assertPushUrl(o.url)
+      assertLocalRef(o.srcRef)
+      assertBranch(o.dstRef)
+      const p = mustProject(slug)
+      if (pushOverride) {
+        const r = pushOverride
+        pushOverride = null
+        if (r.ok) self.pushes.push({ slug, ...o, sha: r.sha })
+        return r
+      }
+      const branch = o.srcRef.slice('refs/heads/'.length)
+      const sha = branch === 'main' ? p.mainSha : p.branches.get(branch)?.sha
+      if (!sha) return { ok: false, reason: 'no_ref', message: `no such ref: ${o.srcRef}` }
+      self.pushes.push({ slug, ...o, sha })
+      return { ok: true, sha, message: `pushed ${o.srcRef} to ${o.dstRef}` }
     },
 
     async execInAgent(agentId, cmd, o = {}) {

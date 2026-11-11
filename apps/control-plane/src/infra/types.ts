@@ -92,6 +92,13 @@ export interface InfraDriver {
   /** Move an agent branch to `to` (CAS on `expect`), saving the old head in `backupRef`.
    *  Throws RefRejectedError when a guard fails. Never moves main. */
   resetBranch?(slug: string, branch: string, opts: { to: string; expect: string; backupRef: string; allowAnyTarget?: boolean }): Promise<{ from: string; to: string }>
+
+  // ── optional Phase 6 capability (docs/phase6.md "GitHub") ──
+
+  /** Push `srcRef` of the project's bare repo to `dstRef` (a branch name) on an https remote,
+   *  from the git container, without --force. The token only travels in the exec's
+   *  environment; it is never in argv and never written to git config. */
+  pushToRemote?(slug: string, opts: PushToRemoteOptions): Promise<PushResult>
 }
 
 export interface CommitInfo {
@@ -107,6 +114,23 @@ export interface CommitInfo {
 export class RefRejectedError extends Error {
   override name = 'RefRejectedError'
 }
+
+// ── Phase 6: publishing to GitHub ─────────────────────────────────────────────
+
+export interface PushToRemoteOptions {
+  /** https URL of the remote, e.g. https://github.com/owner/name.git (no credentials). */
+  url: string
+  /** Local ref to push, e.g. refs/heads/main. */
+  srcRef: string
+  /** Remote branch name (refs/heads/<dstRef>). */
+  dstRef: string
+  /** Sent as `Authorization: Basic base64(x-access-token:<token>)`. */
+  token: string
+}
+
+export type PushResult =
+  | { ok: true; sha: string; message: string }
+  | { ok: false; reason: 'non_fast_forward' | 'no_ref' | 'failed'; message: string }
 
 // ── Phase 2: interactive shells and one-off commands in agent containers ─────
 

@@ -10,17 +10,17 @@ import type { Duplex } from 'node:stream'
 import Dockerode from 'dockerode'
 import { execIn, type ExecResult } from './exec'
 import {
-  DIFF, ENSURE_REPO, LIST_BRANCHES, MERGE, MERGE_EXIT, PRE_RECEIVE_HOOK, REPO,
+  DIFF, ENSURE_REPO, LIST_BRANCHES, MERGE, MERGE_EXIT, PRE_RECEIVE_HOOK, PUSH_EXIT, PUSH_REMOTE, REPO,
   BRANCH_LOG, LIST_REFS, RESET_BRANCH, RESET_EXIT, SET_REF,
 } from './git-scripts'
 import {
   ContainerNotRunningError, RefRejectedError,
   type AgentContainerSpec, type BranchInfo, type CommitInfo, type ContainerInfo, type ContainerStats, type InfraDriver,
-  type MergeResult, type ShellHandle,
+  type MergeResult, type PushResult, type ShellHandle,
 } from './types'
 import {
-  InfraValidationError, assertAgentId, assertBranch, assertEnv, assertMessage, assertRepoUrl,
-  assertSlug, names, assertColonyRef, assertSha,
+  InfraValidationError, assertAgentId, assertBranch, assertEnv, assertLocalRef, assertMessage,
+  assertPushUrl, assertRepoUrl, assertSlug, names, assertColonyRef, assertSha,
 } from './validate'
 
 export interface DockerDriverOptions {
@@ -360,6 +360,31 @@ export function createDockerDriver(opts: DockerDriverOptions = {}): DockerDriver
       const refused: number[] = [RESET_EXIT.moved, RESET_EXIT.notAncestor, RESET_EXIT.behindMain, RESET_EXIT.noCommit, RESET_EXIT.noBranch]
       if (refused.includes(r.exitCode)) throw new RefRejectedError(detail || `revert refused (exit ${r.exitCode})`)
       throw new Error(`revert ${branch} failed (exit ${r.exitCode}): ${detail}`)
+    },
+
+    async pushToRemote(slug, o): Promise<PushResult> {
+      assertSlug(slug)
+      assertPushUrl(o.url)
+      assertLocalRef(o.srcRef)
+      await checkBranch(slug, o.dstRef)
+      if (typeof o.token !== 'string' || !o.token || /[\s\0]/.test(o.token)) throw new InfraValidationError('invalid token')
+      // The token goes in the exec environment only, never in Cmd (which `docker inspect` shows).
+      // The git server is on the project's bridge network, which has outbound access.
+      const r = await execIn(docker, names.gitContainer(slug), sh(PUSH_REMOTE, o.url, o.srcRef, o.dstRef), {
+        user: 'node', env: [`COLONY_GIT_TOKEN=${o.token}`], timeoutMs: 300_000,
+      })
+      const scrub = (t: string) => t.split(o.token).join('***').replace(/(Authorization:\s*\w+\s+)\S+/gi, '$1***')
+      const detail = scrub((r.stderr.trim() || r.stdout.trim()).slice(-2000))
+      switch (r.exitCode) {
+        case 0:
+          return { ok: true, sha: r.stdout.trim().split('\n').pop()!, message: `pushed ${o.srcRef} to ${o.dstRef}` }
+        case PUSH_EXIT.rejected:
+          return { ok: false, reason: 'non_fast_forward', message: `the remote rejected the push (not a fast-forward):\n${detail}` }
+        case PUSH_EXIT.noRef:
+          return { ok: false, reason: 'no_ref', message: `no such ref: ${o.srcRef}` }
+        default:
+          return { ok: false, reason: 'failed', message: `git push failed (exit ${r.exitCode}): ${detail}` }
+      }
     },
 
     async execInAgent(agentId, cmd, o = {}) {
