@@ -72,7 +72,8 @@ let stopping = false
 
 function start(name, tint, cwd, args, env = {}) {
   const child = spawn(process.execPath, args, {
-    cwd, env: { ...process.env, ...(color ? { FORCE_COLOR: '1' } : { NO_COLOR: '1', FORCE_COLOR: '0' }), ...env }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+    // COLONY_LAUNCHER_PID: both servers exit if this launcher disappears (window closed, killed).
+    cwd, env: { ...process.env, ...(color ? { FORCE_COLOR: '1' } : { NO_COLOR: '1', FORCE_COLOR: '0' }), COLONY_LAUNCHER_PID: String(process.pid), ...env }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   })
   const prefix = paint(tint, `[${name}]`.padEnd(6))
   for (const stream of [child.stdout, child.stderr]) {
@@ -103,6 +104,13 @@ function shutdown(code = 0) {
 }
 process.on('SIGINT', () => shutdown(0))
 process.on('SIGTERM', () => shutdown(0))
+// If whatever started us (npm, a shell) is killed without signalling us, stop too; the servers
+// watch this process the same way (COLONY_LAUNCHER_PID), so nothing is left holding the ports.
+const parent = process.ppid
+const parentWatch = setInterval(() => {
+  try { process.kill(parent, 0) } catch (e) { if (e.code === 'ESRCH') { clearInterval(parentWatch); shutdown(0) } }
+}, 2000)
+parentWatch.unref()
 
 say(`Docker ${dockerVersion} · starting the control plane on :${CP_PORT}, then the Ops Deck on :${UI_PORT}`)
 start('cp', '36', join(root, 'apps', 'control-plane'), ['--import', 'tsx', 'src/main.ts'], { COLONY_LOG_LEVEL: process.env.COLONY_LOG_LEVEL || 'warn' })
@@ -115,7 +123,7 @@ for (const end = Date.now() + 90_000; Date.now() < end && !stopping; await sleep
 if (stopping) await new Promise(() => {})
 if (!cpUp) { say(paint('31', 'The control plane did not answer within 90 s; check the output above.')); shutdown(1) }
 else {
-  start('ui', '35', join(root, 'apps', 'ui'), [join(root, 'node_modules', 'vite', 'bin', 'vite.js'), '--port', String(UI_PORT), '--strictPort'])
+  start('ui', '35', join(root, 'apps', 'ui'), [join(root, 'scripts', 'ui-server.mjs'), String(UI_PORT)])
   let uiUp = false
   for (const end = Date.now() + 60_000; Date.now() < end && !stopping; await sleep(500)) {
     if (await ok(`http://localhost:${UI_PORT}/`)) { uiUp = true; break }

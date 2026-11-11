@@ -61,6 +61,20 @@ async function main() {
   }
   process.on('SIGINT', () => void shutdown('SIGINT'))
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
+  watchLauncher(() => void shutdown('launcher exited'))
+}
+
+/** Started by `npm start` (scripts/start.mjs)? Then exit when the launcher is gone, so closing
+ *  its window or killing it never leaves an orphaned control plane holding the port. */
+function watchLauncher(onGone: () => void) {
+  const pid = Number(process.env.COLONY_LAUNCHER_PID)
+  if (!Number.isInteger(pid) || pid <= 0) return
+  const t = setInterval(() => {
+    try { process.kill(pid, 0) } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ESRCH') { clearInterval(t); onGone() }
+    }
+  }, 2000)
+  t.unref()
 }
 
 main().catch((e) => {
