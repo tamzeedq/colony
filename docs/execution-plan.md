@@ -126,7 +126,7 @@ Spec: `docs/phase3.md`.
 - [x] UI: add/cancel quests through the API; Review shows the merge summary and linked quest.
 - [x] Verified with real containers on one base: Sonnet orchestrator read the repo, created a quest, asked for plan approval, spawned a Haiku worker, which committed, pushed and completed; the orchestrator reviewed the diff and requested the merge with a summary (~1 minute end to end).
 
-Not yet: the commander's Approve click on that merge from the UI; a multi-worker run with dependencies and conflicts against real containers (covered by tests with the fake driver). "Let Orchestrator decide" in Spawn is still not wired.
+Not yet: a multi-worker run with dependencies and conflicts against real containers (covered by tests with the fake driver). The UI Approve click and "Let Orchestrator decide" in Spawn are done and verified (2026-11-11: Dot-35 picked a researcher on Haiku for a docs quest, spawned it with the commander's callsign and cap, reviewed and requested the merge).
 
 ### Phase 4 — Dev Supabase per project ✅ built 2026-11-11
 Spec: `docs/phase4.md`.
@@ -154,6 +154,8 @@ Spec: `docs/phase6.md`.
 - [x] Checkpoints/revert: checkpoint refs per agent (automatic on `complete_task`, or manual), branch history, revert by commit or count with a backup ref and one-click undo; only the agent branch moves, then its working tree is synced. Git scripts verified against a real git server (revert, CAS refusal, older-than-main refusal, undo, main refused).
 - [x] GitHub: encrypted fine-grained token in Settings → GitHub; per-base repo/base/mode; Publish pushes Colony's `main` to a `colony/<time>` branch and opens a PR, or fast-forward pushes. Token only in the git container's exec environment.
 - [x] Cost analytics: usage by base, role and model (migration 2), 7/30-day Spend & usage page, explainable model-downshift recommendations. Ran on the real database.
+- [x] `npm start` runs Colony in one terminal (prerequisite checks, ordered startup, no orphaned servers if the launcher dies).
+- [x] Plan usage rolls over when its reset time passes (it only refreshed on agent reports); `resumeAfterReset` implemented.
 - [ ] Optional: desktop packaging (Tauri) and remote access from a phone.
 
 Not yet: a real GitHub publish (needs your token: Settings → GitHub, then Publish on a base); analytics only counts quests and records role/model from now on.
