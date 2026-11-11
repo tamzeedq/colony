@@ -148,12 +148,15 @@ Spec: `docs/phase5.md`.
 
 Not yet: hearing the cues and seeing a desktop notification fire (the browser pane blocks both); "Level N" chips need the control plane to raise agent levels (it only counts quests today).
 
-### Phase 6 — Hardening & polish (ongoing)
-- [ ] Survive restarts: control plane reconnects to running containers and resumes agent sessions.
-- [ ] Snapshots/checkpoints per agent branch; one-click "revert agent's last N commits".
-- [ ] GitHub integration: push branches, open PRs from merged work.
-- [ ] Cost analytics per project/role/model; recommendations (e.g. "QA agents on Haiku would save X").
-- [ ] Optional: package as a desktop app (Tauri), remote access from phone.
+### Phase 6 — Hardening ✅ built 2026-11-11
+Spec: `docs/phase6.md`.
+- [x] Survive restarts: Claude sessions live on the workspace volume (`CLAUDE_CONFIG_DIR` under `/workspace/.colony`, git-excluded); boot and Docker down→up re-run reconcile, re-ensure git servers and restart agents meant to run (`COLONY_AUTO_RESUME`). Verified for real: stopped Dot-35's container and restarted Colony; it came back on its own, kept its session id and remembered the previous exchange.
+- [x] Checkpoints/revert: checkpoint refs per agent (automatic on `complete_task`, or manual), branch history, revert by commit or count with a backup ref and one-click undo; only the agent branch moves, then its working tree is synced. Git scripts verified against a real git server (revert, CAS refusal, older-than-main refusal, undo, main refused).
+- [x] GitHub: encrypted fine-grained token in Settings → GitHub; per-base repo/base/mode; Publish pushes Colony's `main` to a `colony/<time>` branch and opens a PR, or fast-forward pushes. Token only in the git container's exec environment.
+- [x] Cost analytics: usage by base, role and model (migration 2), 7/30-day Spend & usage page, explainable model-downshift recommendations. Ran on the real database.
+- [ ] Optional: desktop packaging (Tauri) and remote access from a phone.
+
+Not yet: a real GitHub publish (needs your token: Settings → GitHub, then Publish on a base); analytics only counts quests and records role/model from now on.
 
 **Total to a solid v1:** ~6–8 weeks part-time. Start dogfooding at end of Phase 2 (~2.5 weeks).
 

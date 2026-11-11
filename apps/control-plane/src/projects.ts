@@ -107,7 +107,11 @@ export class ProjectService {
 
   async diff(id: string, branch: string) {
     const rec = this.get(id)
-    try { return await this.infra.diff(rec.slug, branch) } catch (e) { throw infraError(e, 'infra error') }
+    try { return await this.infra.diff(rec.slug, branch) } catch (e) {
+      // A branch the agent hasn't pushed yet simply has no changes (not an infrastructure failure).
+      if (/no such branch/.test((e as Error).message)) return ''
+      throw infraError(e, 'infra error')
+    }
   }
 }
 
