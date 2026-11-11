@@ -12,6 +12,7 @@ import { useThrottledStream } from '@/hooks/useThrottledStream'
 import { StatusBadge, RoleTile, Button } from '@/components/ui/primitives'
 import { Tabs, Segmented, Bar, inputCls } from '@/components/ui/controls'
 import { FeedRow } from '@/components/feed/ActivityFeed'
+import { Checkpoints } from '@/components/agent/Checkpoints'
 import { cx, usd } from '@/lib/util'
 
 type Tab = 'feed' | 'term' | 'changes' | 'task' | 'config'
@@ -54,7 +55,7 @@ export function Inspector({ docked }: { docked: boolean }) {
           {tab === 'term' && (mode === 'live'
             ? session && <Suspense fallback={<p className="text-sm text-ink-dim">Loading terminal…</p>}><XTerm agent={agent} session={session} interactive={you} /></Suspense>
             : <Terminal agent={agent} />)}
-          {tab === 'changes' && (mode === 'live' ? <LiveChanges agent={agent} /> : <Changes />)}
+          {tab === 'changes' && (mode === 'live' ? <><LiveChanges agent={agent} /><Checkpoints agent={agent} /></> : <Changes />)}
           {tab === 'task' && <TaskPane agent={agent} />}
           {tab === 'config' && <ConfigPane agent={agent} />}
         </div>

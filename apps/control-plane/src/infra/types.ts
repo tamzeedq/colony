@@ -80,6 +80,32 @@ export interface InfraDriver {
 
   /** Run argv in the agent container as `node` (Tty false) and collect the output. */
   execInAgent?(agentId: string, cmd: string[], opts?: { timeoutMs?: number }): Promise<AgentExecResult>
+
+  // ── optional Phase 6 capabilities: checkpoints and revert (docs/phase6.md) ──
+
+  /** Newest-first commits on a branch. */
+  branchLog?(slug: string, branch: string, limit: number): Promise<CommitInfo[]>
+  /** Refs under a prefix such as refs/colony/checkpoints/<agentId>/. */
+  listRefs?(slug: string, prefix: string): Promise<{ ref: string; sha: string }[]>
+  /** Point a refs/colony/... ref at a commit. */
+  setRef?(slug: string, ref: string, sha: string): Promise<void>
+  /** Move an agent branch to `to` (CAS on `expect`), saving the old head in `backupRef`.
+   *  Throws RefRejectedError when a guard fails. Never moves main. */
+  resetBranch?(slug: string, branch: string, opts: { to: string; expect: string; backupRef: string; allowAnyTarget?: boolean }): Promise<{ from: string; to: string }>
+}
+
+export interface CommitInfo {
+  sha: string
+  /** ISO time of the commit. */
+  at: string
+  subject: string
+  /** Already reachable from main. */
+  inMain: boolean
+}
+
+/** A checkpoint/revert guard refused the change (not an infrastructure failure). */
+export class RefRejectedError extends Error {
+  override name = 'RefRejectedError'
 }
 
 // ── Phase 2: interactive shells and one-off commands in agent containers ─────

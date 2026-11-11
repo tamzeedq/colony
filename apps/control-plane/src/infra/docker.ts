@@ -11,15 +11,16 @@ import Dockerode from 'dockerode'
 import { execIn, type ExecResult } from './exec'
 import {
   DIFF, ENSURE_REPO, LIST_BRANCHES, MERGE, MERGE_EXIT, PRE_RECEIVE_HOOK, REPO,
+  BRANCH_LOG, LIST_REFS, RESET_BRANCH, RESET_EXIT, SET_REF,
 } from './git-scripts'
 import {
-  ContainerNotRunningError,
-  type AgentContainerSpec, type BranchInfo, type ContainerInfo, type ContainerStats, type InfraDriver,
+  ContainerNotRunningError, RefRejectedError,
+  type AgentContainerSpec, type BranchInfo, type CommitInfo, type ContainerInfo, type ContainerStats, type InfraDriver,
   type MergeResult, type ShellHandle,
 } from './types'
 import {
   InfraValidationError, assertAgentId, assertBranch, assertEnv, assertMessage, assertRepoUrl,
-  assertSlug, names,
+  assertSlug, names, assertColonyRef, assertSha,
 } from './validate'
 
 export interface DockerDriverOptions {
@@ -320,6 +321,47 @@ export function createDockerDriver(opts: DockerDriverOptions = {}): DockerDriver
           return { ok: false, conflict: false, message: `merge failed (exit ${r.exitCode}): ${detail}` }
       }
     },
+    // ── Phase 6: checkpoints and revert ──
+    async branchLog(slug, branch, limit): Promise<CommitInfo[]> {
+      assertSlug(slug)
+      await checkBranch(slug, branch)
+      const n = Math.max(1, Math.min(200, Math.floor(limit)))
+      const r = await mustOk(await gitExec(slug, sh(BRANCH_LOG, branch, String(n))), `log ${branch}`)
+      return parseBranchLog(r.stdout)
+    },
+
+    async listRefs(slug, prefix) {
+      assertSlug(slug)
+      assertColonyRef(prefix, { prefix: true })
+      const r = await mustOk(await gitExec(slug, sh(LIST_REFS, prefix)), 'list refs')
+      return r.stdout.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+        const [ref, sha] = l.split(' ')
+        return { ref, sha }
+      })
+    },
+
+    async setRef(slug, ref, sha) {
+      assertSlug(slug)
+      assertColonyRef(ref)
+      assertSha(sha)
+      await mustOk(await gitExec(slug, sh(SET_REF, ref, sha)), `set ${ref}`)
+    },
+
+    async resetBranch(slug, branch, o) {
+      assertSlug(slug)
+      await checkBranch(slug, branch)
+      if (branch === 'main') throw new RefRejectedError('refusing to move main')
+      assertSha(o.to)
+      assertSha(o.expect)
+      assertColonyRef(o.backupRef)
+      const r = await gitExec(slug, sh(RESET_BRANCH, branch, o.to, o.expect, o.backupRef, o.allowAnyTarget ? '1' : '0'))
+      const detail = (r.stderr.trim() || r.stdout.trim()).slice(-500)
+      if (r.exitCode === 0) return { from: r.stdout.trim().split('\n').pop()!, to: o.to }
+      const refused: number[] = [RESET_EXIT.moved, RESET_EXIT.notAncestor, RESET_EXIT.behindMain, RESET_EXIT.noCommit, RESET_EXIT.noBranch]
+      if (refused.includes(r.exitCode)) throw new RefRejectedError(detail || `revert refused (exit ${r.exitCode})`)
+      throw new Error(`revert ${branch} failed (exit ${r.exitCode}): ${detail}`)
+    },
+
     async execInAgent(agentId, cmd, o = {}) {
       assertAgentId(agentId)
       if (!Array.isArray(cmd) || cmd.length === 0 || cmd.some((a) => typeof a !== 'string')) {
@@ -386,6 +428,17 @@ export function createDockerDriver(opts: DockerDriverOptions = {}): DockerDriver
 const clampSize = (n: number, d: number) => (Number.isInteger(n) && n >= 1 ? Math.min(n, 1000) : d)
 
 /** `<name> <sha> <behind> <ahead>` lines from LIST_BRANCHES. */
+export function parseBranchLog(out: string): CommitInfo[] {
+  const res: CommitInfo[] = []
+  for (const line of out.split('\n')) {
+    if (!line.trim()) continue
+    const [sha, ts, inMain, ...rest] = line.split('\t')
+    if (!sha || !/^[0-9a-f]{40}$/.test(sha)) continue
+    res.push({ sha, at: new Date(Number(ts) * 1000).toISOString(), inMain: inMain === '1', subject: rest.join('\t') })
+  }
+  return res
+}
+
 export function parseBranchList(out: string): BranchInfo[] {
   const res: BranchInfo[] = []
   for (const line of out.split('\n')) {

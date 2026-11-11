@@ -8,6 +8,11 @@ export interface QuestPatch { status?: Quest['status']; title?: string; brief?: 
 export interface ProjectInput { name: string; goal?: string; stack?: string[]; repoUrl?: string; dailyCapUsd?: number; supabase?: boolean; supabaseStudio?: boolean }
 export type SupabaseAction = 'start' | 'stop' | 'reset'
 
+// Checkpoints and revert (docs/phase6.md §2)
+export interface CommitView { sha: string; at: string; subject: string; inMain: boolean; checkpoint?: string }
+export interface AgentCommits { branch: string; commits: CommitView[]; checkpoints: { ref: string; sha: string; at: string; label: string }[]; lastBackup?: { sha: string; at: string } }
+export interface RevertResult { from: string; to: string; backupRef: string; undo: boolean; workspaceSynced: boolean }
+
 const a = (id: ID) => `/api/agents/${enc(id)}`
 
 export const endpoints = {
@@ -25,6 +30,9 @@ export const endpoints = {
   message: (id: ID, text: string) => api('POST', `${a(id)}/message`, { text }),
   agentEvents: (id: ID, limit = 200) => api<ActivityEvent[]>('GET', `${a(id)}/events?limit=${limit}`),
   spawn: (projectId: ID, input: SpawnInput) => api<Agent>('POST', `/api/projects/${enc(projectId)}/agents`, input),
+  agentCommits: (id: ID) => api<AgentCommits>('GET', `${a(id)}/commits`),
+  checkpoint: (id: ID, label?: string) => api('POST', `${a(id)}/checkpoints`, label ? { label } : {}),
+  revert: (id: ID, input: { to: string; force?: boolean }) => api<RevertResult>('POST', `${a(id)}/revert`, input),
 
   // projects
   createProject: (input: ProjectInput) => api<Project>('POST', '/api/projects', input),

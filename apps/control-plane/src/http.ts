@@ -14,6 +14,7 @@ import { isPriority, isQuestStatus, type QuestService } from './quests'
 import type { Store } from './store'
 import { assertRepoUrl } from './infra/validate'
 import type { SupabaseService } from './supabase'
+import type { CheckpointService } from './checkpoints'
 
 export interface HttpDeps {
   config: Config
@@ -25,6 +26,7 @@ export interface HttpDeps {
   providers: ProviderService
   quests: QuestService
   supabase: SupabaseService
+  checkpoints: CheckpointService
 }
 
 // ── validation helpers ────────────────────────────────────────────────────────
@@ -135,7 +137,7 @@ export function checkAdmin(config: Config, headers: Record<string, string | stri
 // ── routes ────────────────────────────────────────────────────────────────────
 
 export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
-  const { store, agents, projects, merges, config, guards, providers, quests, supabase } = d
+  const { store, agents, projects, merges, config, guards, providers, quests, supabase, checkpoints } = d
 
   // Accept empty JSON bodies (e.g. POST /pause sent with a JSON content type).
   app.removeContentTypeParser('application/json')
@@ -224,6 +226,20 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
     if (!branch || !BRANCH_RE.test(branch)) throw badRequest("query 'branch' is required and must be a valid branch name")
     const diff = await projects.diff(param(req, 'id'), branch)
     return reply.type('text/plain; charset=utf-8').send(diff)
+  })
+
+  // checkpoints and revert (docs/phase6.md)
+  app.get('/api/agents/:id/commits', async (req) => checkpoints.commits(param(req, 'id')))
+  app.post('/api/agents/:id/checkpoints', async (req, reply) => {
+    const label = str(body(req), 'label', { max: 120 })
+    return reply.status(201).send(await checkpoints.create(param(req, 'id'), label || 'Checkpoint'))
+  })
+  app.post('/api/agents/:id/revert', async (req) => {
+    const b = body(req)
+    for (const k of Object.keys(b)) if (!['to', 'count', 'force'].includes(k)) throw badRequest(`unknown field '${k}'`)
+    return checkpoints.revert(param(req, 'id'), {
+      to: str(b, 'to', { max: 40 }), count: num(b, 'count', { min: 1, max: 50, int: true }), force: bool(b, 'force') === true,
+    })
   })
 
   // agents

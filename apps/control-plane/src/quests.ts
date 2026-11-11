@@ -34,6 +34,8 @@ export interface QuestPatch {
 const XP_BY_PRIORITY: Record<Priority, number> = { low: 60, normal: 100, high: 150 }
 
 export class QuestService {
+  /** Called after a worker completes a quest (Phase 6: automatic checkpoint). */
+  onCompleted?: (quest: Quest, rec: AgentRecord, branchSha: string) => void
   constructor(private store: Store, private infra: InfraDriver, private agents: AgentManager) {}
 
   get(id: string): Quest {
@@ -213,6 +215,7 @@ export class QuestService {
       `Their summary: ${summary}\n` +
       `Review it with review_branch, then request_merge or send feedback with message_agent.`)
     this.store.broadcastSnapshot()
+    this.onCompleted?.(next, rec, info.sha)
     return next
   }
 

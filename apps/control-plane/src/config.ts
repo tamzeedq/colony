@@ -35,6 +35,8 @@ export interface Config {
   terminalIdleMs: number
   /** Concurrent terminal sessions per agent (default 3). */
   maxTerminalsPerAgent: number
+  /** Restart agents whose containers stopped while Colony was down (COLONY_AUTO_RESUME, default on). */
+  autoResume: boolean
   /** node_modules/supabase/dist/supabase.js, run with this Node (docs/phase4.md). */
   supabaseCli: string
   /** First host port of the dev Supabase slots (slot n uses base + 10n … +9). */
@@ -107,6 +109,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     uiUrl: (get('COLONY_UI_URL') || 'http://localhost:5173').replace(/\/+$/, ''),
     terminalIdleMs: num(get('COLONY_TERMINAL_IDLE_MS'), 30 * 60_000),
     maxTerminalsPerAgent: num(get('COLONY_MAX_TERMINALS_PER_AGENT'), 3),
+    autoResume: get('COLONY_AUTO_RESUME') !== '0',
     supabaseCli: resolve(get('COLONY_SUPABASE_CLI') || join(repoRoot, 'node_modules', 'supabase', 'dist', 'supabase.js')),
     supabaseBasePort: num(get('COLONY_SUPABASE_BASE_PORT'), 55300),
     supabaseIdleMs: num(get('COLONY_SUPABASE_IDLE_MS'), 30 * 60_000),

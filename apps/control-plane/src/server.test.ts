@@ -480,15 +480,16 @@ describe('security and resilience', () => {
   })
 
   test('state survives a restart; reconcile adopts running containers and flags missing ones', async () => {
+    // With auto-resume off (COLONY_AUTO_RESUME=0); phase6.test.ts covers resuming.
     const infra = createFakeDriver()
-    const c1 = await setup({}, undefined, infra)
+    const c1 = await setup({ autoResume: false }, undefined, infra)
     const p = await createProject(c1)
     const kept = await spawnConnected(c1, p.id)
     const gone = await spawn(c1, p.id, { role: 'qa' })
     await c1.app.close()
     infra.agents.delete(gone.agent.id) // container vanished while we were down
 
-    const c2 = await setup({}, c1.dir, infra)
+    const c2 = await setup({ autoResume: false }, c1.dir, infra)
     try {
       const snap = c2.app.store.snapshot()
       assert.equal(snap.projects.length, 1)

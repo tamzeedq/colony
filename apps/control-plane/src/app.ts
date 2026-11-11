@@ -11,6 +11,7 @@ import { LoopDetector } from './loops'
 import { registerMcp } from './mcp'
 import { QuestService } from './quests'
 import { SupabaseService } from './supabase'
+import { CheckpointService } from './checkpoints'
 import { unavailableSupabase, type SupabaseDriver } from './infra/supabase'
 import type { InfraDriver } from './infra/types'
 import { MergeService, ProjectService } from './projects'
@@ -50,6 +51,7 @@ export interface ColonyApp {
   quests: QuestService
   loops: LoopDetector
   supabase: SupabaseService
+  checkpoints: CheckpointService
   /** Reconcile with Docker and start listening. Returns the bound port. */
   start(port?: number, host?: string): Promise<number>
   /** Graceful shutdown. Agent containers keep running and reconnect to the next instance. */
@@ -80,6 +82,8 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   projects.supabase = supabase
   agents.backend = supabase
   agents.hooks.afterSpawn = (a) => supabase.onAgentSpawn(a)
+  const checkpoints = new CheckpointService(store, db, infra, agents)
+  quests.onCompleted = (q, rec, sha) => checkpoints.onQuestCompleted(q, rec, sha)
   agents.hooks.afterEvent = (ev) => loops.onEvent(ev)
   agents.hooks.afterRemove = (a) => { loops.forget(a.id); quests.onAgentRemoved(a) }
   agents.hooks.afterCrash = (a, reason) => {
@@ -87,16 +91,20 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   }
   const terminals = new TerminalHub(config, store, infra, log)
   const stats = new StatsPoller(store, infra, config.statsIntervalMs, log)
+  stats.onDockerBack = async () => {
+    await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
+    await supabase.reconcile()
+  }
 
   const fastify = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 })
-  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests, supabase })
+  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests, supabase, checkpoints })
   registerMcp(fastify, { store, agents, quests, merges, infra, supabase })
   const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
   return {
-    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase,
+    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, checkpoints,
     async start(port = config.port, host = config.bind) {
-      await reconcile(store, infra, agents, log)
+      await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
       await supabase.reconcile()
       await fastify.listen({ port, host })
       if (opts.poll !== false) { stats.start(); loops.start(); supabase.startTimer() }

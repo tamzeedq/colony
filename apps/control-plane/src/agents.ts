@@ -182,6 +182,8 @@ export class AgentManager {
     const mcp = { mcpServers: { colony: { type: 'http', url: this.config.publicMcpUrl, headers: { Authorization: `Bearer ${token}` } } } }
     env.COLONY_MCP_CONFIG_B64 = Buffer.from(JSON.stringify(mcp), 'utf8').toString('base64')
     if (rec.sessionId) env.COLONY_SESSION_ID = rec.sessionId
+    // Session files live on the workspace volume, so a recreated container can --resume (docs/phase6.md).
+    env.CLAUDE_CONFIG_DIR = '/workspace/.colony/claude'
     if (this.config.oauthToken) env.CLAUDE_CODE_OAUTH_TOKEN = this.config.oauthToken
     return env
   }

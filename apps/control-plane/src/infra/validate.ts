@@ -95,3 +95,18 @@ export const names = {
   agentContainer: (agentId: string) => `colony-agent-${agentId}`,
   agentVolume: (agentId: string) => `colony-ws-${agentId}`,
 }
+
+/** refs/colony/checkpoints/<agentId>/<ts> or refs/colony/backup/<agentId>/<ts>, and their prefixes. */
+export const COLONY_REF_RE = /^refs\/colony\/(checkpoints|backup)\/[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\/(\d{10,16})?$/
+export const SHA_RE = /^[0-9a-f]{40}$/
+
+export function assertColonyRef(ref: string, { prefix = false } = {}): string {
+  if (typeof ref !== 'string' || !COLONY_REF_RE.test(ref) || (prefix ? !ref.endsWith('/') : ref.endsWith('/'))) {
+    throw new InfraValidationError(`invalid colony ref: ${String(ref).slice(0, 120)}`)
+  }
+  return ref
+}
+export function assertSha(sha: string): string {
+  if (typeof sha !== 'string' || !SHA_RE.test(sha)) throw new InfraValidationError('invalid commit sha')
+  return sha
+}

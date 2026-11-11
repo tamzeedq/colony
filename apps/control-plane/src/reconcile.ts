@@ -7,8 +7,15 @@ import type { Store } from './store'
 
 type Log = { info: (m: string) => void; warn: (m: string) => void }
 
-/** Mark agents whose container is gone as error; adopt running ones (await their runner). */
-export async function reconcile(store: Store, infra: InfraDriver, agents: AgentManager, log: Log) {
+export interface ReconcileOptions {
+  /** Restart agents whose container stopped or vanished while they were meant to run (docs/phase6.md). */
+  autoResume?: boolean
+}
+
+/** Adopt running agents (await their runner). Agents whose container is gone are resumed when
+ *  they were meant to run, otherwise marked as error with a crash alert. Git servers are
+ *  (re)started first, since a Docker restart stops them too. */
+export async function reconcile(store: Store, infra: InfraDriver, agents: AgentManager, log: Log, opts: ReconcileOptions = {}) {
   store.dockerUp = await infra.ping().catch(() => false)
   if (!store.dockerUp) {
     log.warn('docker is not reachable; skipping reconciliation')
@@ -22,6 +29,13 @@ export async function reconcile(store: Store, infra: InfraDriver, agents: AgentM
     log.warn(`listContainers failed: ${(e as Error).message}`)
     return
   }
+  for (const p of store.projects.values()) {
+    try {
+      await infra.ensureProject(p.slug, { repoUrl: p.project.repoUrl, projectName: p.project.name })
+    } catch (e) {
+      log.warn(`could not ensure project ${p.slug}: ${(e as Error).message}`)
+    }
+  }
   const byAgent = new Map(containers.filter((c) => c.kind === 'agent' && c.agentId).map((c) => [c.agentId!, c]))
   store.runningContainers = containers.filter((c) => c.kind === 'agent' && c.running).length
 
@@ -32,6 +46,18 @@ export async function reconcile(store: Store, infra: InfraDriver, agents: AgentM
       store.patchAgent(id, { container: { ...rec.agent.container, name: c.name, health: 'ok' } })
       agents.expectReconnect(id)
       log.info(`adopted running agent ${id}`)
+    } else if (rec.agent.status !== 'error' && rec.agent.status !== 'done' && opts.autoResume && rec.internal.desired === 'run') {
+      try {
+        await agents.restart(id)
+        store.raiseAlert({
+          kind: 'crash', severity: 'heads_up', projectId: rec.agent.projectId, agentId: id,
+          title: `${rec.agent.callsign} resumed after restart`,
+          detail: `Its container was ${c ? 'stopped' : 'missing'} when Colony started; it was restarted on its workspace and continues its session.`,
+        })
+        log.info(`resumed agent ${id} (container ${c ? 'stopped' : 'missing'})`)
+      } catch (e) {
+        log.warn(`could not resume ${id}: ${(e as Error).message}`)
+      }
     } else if (rec.agent.status !== 'error') {
       store.patchAgent(id, {
         status: 'error', currentAction: c ? 'Container stopped' : 'Container missing',
@@ -54,6 +80,9 @@ export async function reconcile(store: Store, infra: InfraDriver, agents: AgentM
 export class StatsPoller {
   private timer: NodeJS.Timeout | undefined
   private busy = false
+  private wasUp: boolean | undefined
+  /** Called when Docker becomes reachable again after being down (re-run reconcile). */
+  onDockerBack?: () => Promise<void>
 
   constructor(private store: Store, private infra: InfraDriver, private intervalMs: number, private log: Log) {}
 
@@ -75,6 +104,12 @@ export class StatsPoller {
       this.store.rollDayIfNeeded()
       this.store.sampleHost()
       this.store.dockerUp = await this.infra.ping().catch(() => false)
+      const back = this.wasUp === false && this.store.dockerUp
+      this.wasUp = this.store.dockerUp
+      if (back && this.onDockerBack) {
+        this.log.info('docker is reachable again; reconciling')
+        await this.onDockerBack().catch((e) => this.log.warn(`reconcile after docker came back: ${(e as Error).message}`))
+      }
       let running = 0
       if (this.store.dockerUp) {
         for (const rec of [...this.store.agents.values()]) {

@@ -8,7 +8,7 @@
 //     neither                  → create it from origin/main (or as an unborn branch in an empty repo)
 
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Logger } from './log'
 
@@ -91,10 +91,27 @@ export async function setupWorkspace(opts: { dir: string; gitUrl: string; branch
     await gitOk(dir, ['symbolic-ref', 'HEAD', `refs/heads/${branch}`])
   }
 
+  excludeColonyDir(dir)
+
   const head = await git(dir, ['rev-parse', '--verify', '--quiet', 'HEAD'])
   const headSha = head.code === 0 ? head.stdout.trim() : undefined
   log.info(`workspace ready on ${branch}${headSha ? ` @ ${headSha.slice(0, 12)}` : ' (no commits)'}`)
   return { branch, ...(headSha ? { headSha } : {}) }
+}
+
+/** Colony keeps the Claude session under /workspace/.colony (CLAUDE_CONFIG_DIR, docs/phase6.md) so
+ *  it survives container recreation. Keep it out of git with a local-only exclude. */
+export function excludeColonyDir(dir: string) {
+  const info = join(dir, '.git', 'info')
+  const file = join(info, 'exclude')
+  try {
+    mkdirSync(info, { recursive: true })
+    const cur = existsSync(file) ? readFileSync(file, 'utf8') : ''
+    if (!cur.split(/\r?\n/).some((l) => l.trim() === '.colony/' || l.trim() === '/.colony/')) {
+      const sep = cur && !cur.endsWith('\n') ? '\n' : ''
+      appendFileSync(file, `${sep}# Colony session data (never committed)\n/.colony/\n`)
+    }
+  } catch { /* best effort */ }
 }
 
 /** Retry `setupWorkspace` (the project's git server may still be starting). */

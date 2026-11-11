@@ -5,9 +5,12 @@ import { Duplex } from 'node:stream'
 import {
   ContainerNotRunningError,
   type AgentContainerSpec, type AgentExecResult, type BranchInfo, type ContainerInfo, type ContainerStats,
-  type InfraDriver, type MergeResult, type ShellHandle,
+  type InfraDriver, type MergeResult, type ShellHandle, RefRejectedError,
 } from './types'
-import { assertAgentId, assertBranch, assertMessage, assertSlug, names } from './validate'
+import { assertAgentId, assertBranch, assertColonyRef, assertMessage, assertSha, assertSlug, names } from './validate'
+
+/** Branch histories saved by resetBranch, keyed by the head they had (lets undo restore them). */
+const fakeHistory = new Map<string, NonNullable<FakeBranch['commits']>>()
 
 export interface FakeCall {
   method: keyof InfraDriver
@@ -21,6 +24,8 @@ export interface FakeBranch {
   diff: string
   /** mergeToMain on this branch reports a conflict. */
   conflict?: boolean
+  /** Commit history, newest first (Phase 6). Defaults to one commit at `sha`. */
+  commits?: { sha: string; subject: string; at: string; inMain?: boolean }[]
 }
 
 export interface FakeProject {
@@ -29,6 +34,8 @@ export interface FakeProject {
   projectName?: string
   mainSha: string
   branches: Map<string, FakeBranch>
+  /** refs/colony/... -> sha (Phase 6). */
+  refs: Map<string, string>
 }
 
 export interface FakeAgent {
@@ -106,7 +113,9 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
         behindMain: b.behindMain ?? 0,
         diff: b.diff ?? `diff --git a/file b/file\n+change on ${name}\n`,
         conflict: b.conflict,
+        commits: b.commits,
       }
+      if (b.commits?.length) branch.sha = b.commits[0].sha
       p.branches.set(assertBranch(name), branch)
       return branch
     },
@@ -142,6 +151,7 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       self.projects.set(slug, {
         slug, repoUrl: o.repoUrl, projectName: o.projectName, mainSha: sha(),
         branches: new Map(),
+        refs: new Map(),
       })
     },
 
@@ -247,6 +257,47 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       for (const [n, other] of p.branches) if (n !== branch) other.behindMain += 1
       return { ok: true, sha: p.mainSha, message: `merged ${branch} into main` }
     },
+    // ── Phase 6: checkpoints and revert (the real guards live in git-scripts RESET_BRANCH) ──
+    async branchLog(slug, branch, limit) {
+      record('branchLog', [slug, branch, limit])
+      const b = mustProject(slug).branches.get(assertBranch(branch))
+      if (!b) throw new Error(`log ${branch} failed (exit 3): no such branch: ${branch}`)
+      const commits = b.commits ?? [{ sha: b.sha, subject: `work on ${branch}`, at: new Date().toISOString() }]
+      return commits.slice(0, limit).map((c) => ({ sha: c.sha, subject: c.subject, at: c.at, inMain: !!c.inMain }))
+    },
+    async listRefs(slug, prefix) {
+      record('listRefs', [slug, prefix])
+      assertColonyRef(prefix, { prefix: true })
+      return [...mustProject(slug).refs].filter(([r]) => r.startsWith(prefix)).map(([ref, sha]) => ({ ref, sha })).sort((a, b) => a.ref.localeCompare(b.ref))
+    },
+    async setRef(slug, ref, sha) {
+      record('setRef', [slug, ref, sha])
+      mustProject(slug).refs.set(assertColonyRef(ref), assertSha(sha))
+    },
+    async resetBranch(slug, branch, o) {
+      record('resetBranch', [slug, branch, o])
+      if (branch === 'main') throw new RefRejectedError('refusing to move main')
+      const p = mustProject(slug)
+      const b = p.branches.get(assertBranch(branch))
+      if (!b) throw new RefRejectedError(`no such branch: ${branch}`)
+      assertSha(o.to); assertSha(o.expect); assertColonyRef(o.backupRef)
+      if (b.sha !== o.expect) throw new RefRejectedError(`branch moved (now ${b.sha})`)
+      const commits = b.commits ?? [{ sha: b.sha, subject: '', at: '' }]
+      const i = commits.findIndex((c) => c.sha === o.to)
+      if (!o.allowAnyTarget) {
+        if (i < 0) throw new RefRejectedError(`${o.to} is not on ${branch}`)
+        // Older than where the branch left main: the commit is in main and so is the next newer one.
+        if (commits[i].inMain && i > 0 && commits[i - 1].inMain) throw new RefRejectedError(`${o.to} is older than where ${branch} left main`)
+      } else if (i < 0 && !fakeHistory.has(o.to)) throw new RefRejectedError(`no such commit: ${o.to}`)
+      p.refs.set(o.backupRef, b.sha)
+      const from = b.sha
+      fakeHistory.set(from, commits)
+      b.commits = i >= 0 ? commits.slice(i) : fakeHistory.get(o.to)!
+      b.sha = o.to
+      b.aheadOfMain = b.commits.filter((c) => !c.inMain).length
+      return { from, to: o.to }
+    },
+
     async execInAgent(agentId, cmd, o = {}) {
       record('execInAgent', [agentId, cmd, o])
       assertAgentId(agentId)

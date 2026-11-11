@@ -100,3 +100,55 @@ if [ "$NEW" = "$OLD" ]; then echo "$OLD"; exit 11; fi
 git -C "$R" update-ref -m "colony: merge $1" refs/heads/main "$NEW" "$OLD" >&2 || exit 5
 echo "$NEW"
 `
+
+// ── Phase 6: checkpoints and branch revert (docs/phase6.md) ──────────────────
+
+/** $1 = branch, $2 = max commits. Prints `<sha>\t<unix ts>\t<in main 0|1>\t<subject>` newest first. */
+export const BRANCH_LOG = `set -eu
+cd ${REPO}
+git rev-parse --verify --quiet "refs/heads/$1^{commit}" >/dev/null || { echo "no such branch: $1" >&2; exit 3; }
+hasmain=0
+git show-ref --verify --quiet refs/heads/main && hasmain=1
+git log -n "$2" --format='%H%x09%ct%x09%s' "refs/heads/$1" | while IFS="$(printf '\t')" read -r s t subj; do
+  m=0
+  if [ "$hasmain" = 1 ] && git merge-base --is-ancestor "$s" refs/heads/main; then m=1; fi
+  printf '%s\t%s\t%s\t%s\n' "$s" "$t" "$m" "$subj"
+done
+`
+
+/** $1 = ref prefix (refs/colony/...). Prints `<ref> <sha>`. */
+export const LIST_REFS = `set -eu
+cd ${REPO}
+git for-each-ref --format='%(refname) %(objectname)' "$1"
+`
+
+/** $1 = ref, $2 = sha (must be a commit). */
+export const SET_REF = `set -eu
+cd ${REPO}
+git rev-parse --verify --quiet "$2^{commit}" >/dev/null || { echo "no such commit: $2" >&2; exit 3; }
+git update-ref "$1" "$2"
+`
+
+/** Exit codes for RESET_BRANCH. */
+export const RESET_EXIT = { noBranch: 3, moved: 5, notAncestor: 7, behindMain: 8, noCommit: 9 } as const
+
+/** $1 = branch, $2 = target sha, $3 = expected current sha, $4 = backup ref, $5 = 1 to skip the
+ *  ancestry guards (undo to a backup). Saves the backup ref, then moves the branch with a
+ *  compare-and-swap. Never touches main. Prints the old sha. */
+export const RESET_BRANCH = `set -u
+cd ${REPO}
+[ "$1" = main ] && { echo "refusing to move main" >&2; exit 3; }
+OLD=$(git rev-parse --verify --quiet "refs/heads/$1") || { echo "no such branch: $1" >&2; exit 3; }
+[ "$OLD" = "$3" ] || { echo "branch moved (now $OLD)" >&2; exit 5; }
+git rev-parse --verify --quiet "$2^{commit}" >/dev/null || { echo "no such commit: $2" >&2; exit 9; }
+if [ "$5" != 1 ]; then
+  git merge-base --is-ancestor "$2" "$OLD" || { echo "$2 is not on $1" >&2; exit 7; }
+  if git show-ref --verify --quiet refs/heads/main; then
+    MB=$(git merge-base refs/heads/main "$OLD")
+    git merge-base --is-ancestor "$MB" "$2" || { echo "$2 is older than where $1 left main" >&2; exit 8; }
+  fi
+fi
+git update-ref "$4" "$OLD" || exit 6
+git update-ref -m "colony: revert $1" "refs/heads/$1" "$2" "$OLD" || exit 5
+echo "$OLD"
+`
