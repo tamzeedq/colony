@@ -5,6 +5,7 @@ import type { AgentManager } from './agents'
 import type { Config } from './config'
 import { conflict, HttpError, infraError, notFound } from './errors'
 import type { InfraDriver, MergeResult } from './infra/types'
+import type { QuestService } from './quests'
 import { newId, nowIso, type Store } from './store'
 
 export interface CreateProjectInput {
@@ -104,9 +105,14 @@ export interface CreateMergeRequestInput {
   branch: string
   requestedBy?: string
   prNumber?: number
+  questId?: string
+  summary?: string
 }
 
 export class MergeService {
+  /** Set by the app once the quest service exists (merge outcomes move quests). */
+  quests?: QuestService
+
   constructor(private store: Store, private infra: InfraDriver, private agents?: AgentManager) {}
 
   get(id: string) {
@@ -126,12 +132,15 @@ export class MergeService {
     const mr: MergeRequest = {
       id: newId('mr'), projectId: input.projectId, branch: input.branch, requestedBy, status: 'pending',
       ...(input.prNumber !== undefined ? { prNumber: input.prNumber } : {}),
+      ...(input.questId ? { questId: input.questId } : {}),
+      ...(input.summary ? { summary: input.summary } : {}),
     }
     this.store.saveMergeRequest(mr)
     const who = requestedBy === 'you' ? undefined : this.store.agents.get(requestedBy)
     this.store.raiseAlert({
       id: this.alertId(mr.id), kind: 'approval', severity: 'needs_you', projectId: mr.projectId, agentId: who?.agent.id,
       title: `Merge ${mr.branch} → main?${mr.prNumber ? ` (PR #${mr.prNumber})` : ''}`,
+      ...(mr.summary ? { detail: mr.summary } : {}),
       actions: [{ id: 'approve', label: '✓ Approve & merge', primary: true, actsAsYou: true }, { id: 'review', label: 'Open review' }],
     })
     this.store.broadcastSnapshot()
@@ -162,6 +171,7 @@ export class MergeService {
         `The commander requested changes on your merge request for ${mr.branch} → main:\n${note}\n\n` +
         `Address this, push to ${mr.branch}, and request the merge again.`)
     }
+    this.quests?.onChangesRequested(next, note)
     this.store.broadcastSnapshot()
     return next
   }
@@ -182,6 +192,7 @@ export class MergeService {
       const merged: MergeRequest = { ...mr, status: 'merged' }
       this.store.saveMergeRequest(merged)
       this.store.resolveAlert(this.alertId(mr.id))
+      this.quests?.onMerged(merged)
       this.store.broadcastSnapshot()
       return { mergeRequest: merged, result }
     }
@@ -191,6 +202,7 @@ export class MergeService {
       detail: result.message,
       actions: [{ id: 'review', label: 'Open review', primary: true }, { id: 'dismiss', label: 'Dismiss' }],
     })
+    this.quests?.onMergeFailed(mr, result.conflict, result.message)
     this.store.broadcastSnapshot()
     throw new HttpError(result.conflict ? 409 : 502, result.conflict ? 'merge_conflict' : 'merge_failed', result.message, { mergeRequest: mr })
   }

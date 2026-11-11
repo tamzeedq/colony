@@ -10,6 +10,7 @@ import { badRequest, HttpError } from './errors'
 import type { GuardService } from './guards'
 import type { MergeService, ProjectService } from './projects'
 import type { ProviderService, ProviderUpdate } from './providers'
+import { isPriority, isQuestStatus, type QuestService } from './quests'
 import type { Store } from './store'
 import { assertRepoUrl } from './infra/validate'
 
@@ -21,6 +22,7 @@ export interface HttpDeps {
   merges: MergeService
   guards: GuardService
   providers: ProviderService
+  quests: QuestService
 }
 
 // ── validation helpers ────────────────────────────────────────────────────────
@@ -124,7 +126,7 @@ export function checkAdmin(config: Config, headers: Record<string, string | stri
 // ── routes ────────────────────────────────────────────────────────────────────
 
 export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
-  const { store, agents, projects, merges, config, guards, providers } = d
+  const { store, agents, projects, merges, config, guards, providers, quests } = d
 
   // Accept empty JSON bodies (e.g. POST /pause sent with a JSON content type).
   app.removeContentTypeParser('application/json')
@@ -148,6 +150,8 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
     if (!isLocalOrigin(req.headers.origin)) return reply.status(403).send({ error: { code: 'forbidden_origin', message: 'origin not allowed' } })
     if (req.url === '/api/health') return
+    // Agents' MCP endpoint authenticates with the agent's own token (mcp.ts), never the admin token.
+    if (req.url === '/mcp' || req.url.startsWith('/mcp?')) return
     if (!checkAdmin(config, req.headers)) return reply.status(401).send({ error: { code: 'unauthorized', message: 'admin token required' } })
   })
 
@@ -255,6 +259,33 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
   app.post('/api/merge-requests/:id/request-changes', async (req) => {
     const note = str(body(req), 'note', { required: true, max: 20_000 })
     return merges.requestChanges(param(req, 'id'), note)
+  })
+
+  // quests (the commander's side; agents use the MCP tools)
+  app.post('/api/projects/:id/quests', async (req, reply) => {
+    const b = body(req)
+    if (b.priority !== undefined && !isPriority(b.priority)) throw badRequest("'priority' must be low, normal or high")
+    const acceptance = strList(b, 'acceptance')
+    if (acceptance && acceptance.length > 20) throw badRequest("'acceptance' has more than 20 items")
+    const q = quests.create(param(req, 'id'), {
+      title: str(b, 'title', { required: true, max: 200 }),
+      brief: str(b, 'brief', { max: 20_000 }),
+      priority: b.priority as 'low' | 'normal' | 'high' | undefined,
+      acceptance,
+    }, 'you')
+    return reply.status(201).send(q)
+  })
+  app.patch('/api/quests/:id', async (req) => {
+    const b = body(req)
+    for (const k of Object.keys(b)) if (!['status', 'title', 'brief', 'priority'].includes(k)) throw badRequest(`unknown field '${k}'`)
+    if (b.status !== undefined && !isQuestStatus(b.status)) throw badRequest("'status' is not a quest status")
+    if (b.priority !== undefined && !isPriority(b.priority)) throw badRequest("'priority' must be low, normal or high")
+    return quests.patch(param(req, 'id'), {
+      status: b.status as never,
+      title: b.title === undefined ? undefined : str(b, 'title', { required: true, max: 200 }),
+      brief: str(b, 'brief', { max: 20_000 }),
+      priority: b.priority as 'low' | 'normal' | 'high' | undefined,
+    }, 'you')
   })
 
   // guards

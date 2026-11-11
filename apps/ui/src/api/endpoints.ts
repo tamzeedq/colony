@@ -1,8 +1,10 @@
 // Typed calls for every control-plane route the UI uses (docs/phase2.md "UI action → API").
-import type { ActivityEvent, Agent, Alert, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, RoleId, Snapshot } from '@/types/colony'
+import type { ActivityEvent, Agent, Alert, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot } from '@/types/colony'
 import { api, apiText, enc } from './client'
 
 export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string }
+export interface QuestInput { title: string; brief?: string; priority?: Quest['priority']; acceptance?: string[] }
+export interface QuestPatch { status?: Quest['status']; title?: string; brief?: string; priority?: Quest['priority'] }
 export interface ProjectInput { name: string; goal?: string; stack?: string[]; repoUrl?: string; dailyCapUsd?: number }
 
 const a = (id: ID) => `/api/agents/${enc(id)}`
@@ -28,6 +30,10 @@ export const endpoints = {
   patchProject: (id: ID, patch: { goal?: string; dailyCapUsd?: number }) => api<Project>('PATCH', `/api/projects/${enc(id)}`, patch),
   diff: (projectId: ID, branch: string) => apiText(`/api/projects/${enc(projectId)}/diff?branch=${enc(branch)}`),
 
+  // quests (docs/phase3.md "Quest lifecycle")
+  createQuest: (projectId: ID, body: QuestInput) => api<Quest>('POST', `/api/projects/${enc(projectId)}/quests`, body),
+  patchQuest: (id: ID, body: QuestPatch) => api<Quest>('PATCH', `/api/quests/${enc(id)}`, body),
+
   // guards
   getGuards: () => api<Guards>('GET', '/api/guards'),
   patchGuards: (patch: Partial<Guards>) => api<Guards>('PATCH', '/api/guards', patch),
@@ -51,5 +57,13 @@ export function mergeRequestFrom(r: unknown): MergeRequest | undefined {
   const o = r as { mergeRequest?: MergeRequest } & Partial<MergeRequest> | undefined
   if (o?.mergeRequest?.id) return o.mergeRequest
   if (o?.id && o.branch) return o as MergeRequest
+  return undefined
+}
+
+/** Pull a Quest out of a create / patch response (bare or wrapped as `{ quest }`). */
+export function questFrom(r: unknown): Quest | undefined {
+  const o = r as { quest?: Quest } & Partial<Quest> | undefined
+  if (o?.quest?.id) return o.quest
+  if (o?.id && o.projectId && o.title) return o as Quest
   return undefined
 }

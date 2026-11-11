@@ -1,11 +1,12 @@
 // Merge review on live data: /review/:id resolves a MergeRequest (by id, falling back to
 // prNumber), shows the real diff of its branch vs main, and approves / requests changes.
+// Phase 3: the requester's `summary` leads the page, and the linked quest (`questId`) sits in the rail.
 // HARD RULE: only this human approval lets anything merge to main (canMergeToMain on the server).
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useStore } from '@/store/store'
-import { ROLES } from '@/design/status'
-import { Segmented, inputCls } from '@/components/ui/controls'
+import { QUEST_STATUS, ROLES } from '@/design/status'
+import { Bar, Segmented, inputCls } from '@/components/ui/controls'
 import { Button } from '@/components/ui/primitives'
 import { useDiff, DiffFileButton, ReviewDiff } from '@/components/review/DiffView'
 import { diffTotals } from '@/lib/diff'
@@ -34,7 +35,11 @@ export function ReviewLive() {
   if (!mr) return <p className="p-8 text-ink-muted">No merge request {id}. <Link to="/inbox">Back to inbox</Link></p>
 
   const requester = mr.requestedBy === 'you' ? undefined : state.agents.find((a) => a.id === mr.requestedBy)
-  const quest = state.quests.find((q) => q.projectId === mr.projectId && q.branch === mr.branch)
+  const quest = (mr.questId ? state.quests.find((q) => q.id === mr.questId) : undefined)
+    ?? state.quests.find((q) => q.projectId === mr.projectId && q.branch === mr.branch)
+  const qs = quest ? QUEST_STATUS[quest.status] : undefined
+  const accDone = quest ? quest.acceptance.filter((c) => c.done).length : 0
+  const summary = mr.summary?.trim()
   const files = diff.status === 'ok' ? diff.files : []
   const t = diffTotals(files)
   const cur = files[Math.min(file, Math.max(0, files.length - 1))]
@@ -66,6 +71,12 @@ export function ReviewLive() {
         {diff.status === 'ok' && <span className="text-xs text-ink-muted"><span className="text-st-done">+{t.added}</span> <span className="text-st-error">−{t.removed}</span> · {files.length} files</span>}
         <span className={cx('ml-auto rounded-full border px-3 py-1 text-xs font-semibold', st[1])}>{st[0]}</span>
       </header>
+      {summary && (
+        <section aria-label="Summary" className="border-b border-line-soft bg-well px-6 py-3.5">
+          <div className="mb-1 text-[11px] uppercase tracking-[.12em] text-st-think">Summary · {requester?.callsign ?? 'you'}</div>
+          <p className="m-0 max-w-[880px] whitespace-pre-wrap text-[14px] leading-relaxed text-ink">{summary}</p>
+        </section>
+      )}
       <div className="flex flex-1 flex-wrap">
         <aside className="flex max-w-[360px] flex-[1_1_320px] flex-col gap-4 border-r border-line-soft bg-well p-4.5">
           <section className="rounded-lg border border-st-think/35 bg-surface px-3.5 py-3">
@@ -73,9 +84,29 @@ export function ReviewLive() {
             <p className="m-0 text-[13px] leading-relaxed">
               {requester ? `${ROLES[requester.role].name} on ${project?.name ?? 'this base'} asks to merge ` : 'Merge '}
               <span className="font-mono text-xs">{mr.branch}</span> into <span className="font-mono text-xs">main</span>.
-              {quest ? <> Quest: {quest.title}.</> : null}
             </p>
           </section>
+          {quest && qs && (
+            <section aria-label="Linked quest" className="rounded-lg border border-line bg-surface px-3.5 py-3">
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="text-label">Quest</span>
+                <span className={cx('ml-auto text-[11px] uppercase tracking-[.12em]', qs.text)}>{qs.glyph} {qs.label}</span>
+              </div>
+              <Link to={`/quest/${quest.id}`} className="block font-display text-[15px] font-semibold leading-snug">{quest.title} →</Link>
+              {quest.acceptance.length > 0 ? (
+                <div className="mt-2.5">
+                  <div className="mb-1.5 flex items-center gap-2 text-xs text-ink-muted">Acceptance · {accDone} of {quest.acceptance.length}</div>
+                  <div className="mb-2"><Bar pct={(accDone / quest.acceptance.length) * 100} className="bg-st-run" h="h-1" /></div>
+                  {quest.acceptance.map((c) => (
+                    <div key={c.text} className="flex gap-2.5 py-0.5 text-[13px]">
+                      <span className={cx('font-mono', c.done ? 'text-st-done' : 'text-ink-dim')}>{c.done ? '✓' : '○'}</span>
+                      <span className={c.done ? '' : 'text-ink-muted'}>{c.text}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="m-0 mt-1.5 text-xs text-ink-dim">No acceptance criteria.</p>}
+            </section>
+          )}
           <section className="rounded-lg border border-line bg-surface px-3.5 py-3 text-[13px] leading-relaxed text-ink-soft">
             <div className="text-label mb-1.5">Approval</div>
             {mr.approvedBy === 'you' && mr.approvedAt

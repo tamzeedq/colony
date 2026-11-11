@@ -270,6 +270,19 @@ export class Store {
     )
   }
 
+  // ── quests ──
+  saveQuest(q: Quest) {
+    this.quests.set(q.id, q)
+    this.db.run(
+      `INSERT INTO quests(id, project_id, json) VALUES(?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET json = excluded.json`,
+      q.id, q.projectId, JSON.stringify(q),
+    )
+  }
+  projectQuests(projectId: string): Quest[] {
+    return [...this.quests.values()].filter((q) => q.projectId === projectId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  }
+
   // ── usage & spend ──
   /** Add a usage delta for an agent (persisted per local day). */
   addUsage(agentId: string, costUsd: number, tokens: number) {

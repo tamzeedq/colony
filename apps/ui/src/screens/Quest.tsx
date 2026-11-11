@@ -46,7 +46,7 @@ export function Quest() {
         <div className="flex-1" />
         <Button>⇄ Reassign</Button>
         <Button>Ask Orchestrator to split</Button>
-        <Button variant="danger" onClick={() => dispatch({ type: 'questStatus', id: quest.id, status: 'failed' })}>Cancel quest</Button>
+        <Button variant="danger" onClick={() => void dispatch({ type: 'questStatus', id: quest.id, status: 'failed' })}>Cancel quest</Button>
       </header>
       <div className="flex flex-wrap">
         <main className="flex min-w-0 flex-[999_1_760px] flex-col gap-5 px-6.5 py-5.5">

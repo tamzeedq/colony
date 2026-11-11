@@ -15,8 +15,12 @@ export interface Config {
   rolesDir: string
   agentImage: string
   publicRunnerUrl: string
+  /** Colony MCP endpoint as agent containers reach it (docs/phase3.md). */
+  publicMcpUrl: string
   gitUrl: string
   maxContainers: number
+  /** Live agents per project, orchestrator included (default 5). */
+  maxAgentsPerProject: number
   agentMemoryMb: number
   agentCpus: number
   defaultBudgetCapUsd: number
@@ -81,8 +85,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     rolesDir: resolve(get('COLONY_ROLES_DIR') || join(repoRoot, 'roles')),
     agentImage: get('COLONY_AGENT_IMAGE') || 'colony-agent:dev',
     publicRunnerUrl: get('COLONY_PUBLIC_RUNNER_URL') || `ws://host.docker.internal:${port}/api/runner`,
+    publicMcpUrl: get('COLONY_PUBLIC_MCP_URL') || `http://host.docker.internal:${port}/mcp`,
     gitUrl: 'git://git/repo.git',
     maxContainers: num(get('COLONY_MAX_CONTAINERS'), 12),
+    maxAgentsPerProject: num(get('COLONY_MAX_AGENTS_PER_PROJECT'), 5),
     agentMemoryMb: num(get('COLONY_AGENT_MEMORY_MB'), 2048),
     agentCpus: num(get('COLONY_AGENT_CPUS'), 2),
     defaultBudgetCapUsd: num(get('COLONY_AGENT_BUDGET_USD'), 10),

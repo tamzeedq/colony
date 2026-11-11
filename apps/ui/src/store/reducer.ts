@@ -45,6 +45,9 @@ export type Action =
   | { type: 'upsertAlert'; alert: Alert }
   | { type: 'resources'; resources: Resources }
   | { type: 'upsertMergeRequest'; mergeRequest: MergeRequest }
+  /** Server quest; `replaceId` swaps out the optimistic one (temp id `q-<timestamp>`). */
+  | { type: 'upsertQuest'; quest: Quest; replaceId?: ID }
+  | { type: 'removeQuest'; id: ID }
   | { type: 'setGuards'; guards: Guards }
   | { type: 'setProviders'; providers: ProviderView[] }
   | { type: 'upsertProvider'; provider: ProviderView }
@@ -69,6 +72,9 @@ const upsert = <T extends { id: ID }>(list: T[], item: T, prepend = false): T[] 
 
 const linkAgent = (projects: Project[], agent: Agent) =>
   projects.map((p) => (p.id === agent.projectId && !p.agentIds.includes(agent.id) ? { ...p, agentIds: [...p.agentIds, agent.id] } : p))
+
+/** Optimistic quests from QuestBoard carry a temporary id until the server answers. */
+export const isTempQuestId = (id: ID) => /^q-\d+$/.test(id)
 
 const looksLikeAgent = (p: Partial<Agent>): p is Agent => !!(p.id && p.projectId && p.callsign && p.role && p.container)
 
@@ -133,8 +139,10 @@ export function reducer(s: State, a: Action): State {
     case 'hydrate': {
       const snap = a.snapshot
       const agentIds = new Set(snap.agents.map((x) => x.id))
-      // Quests stay local until Phase 3: keep ones you added that the server doesn't know.
-      const localQuests = s.quests.filter((q) => q.createdBy === 'you' && !snap.quests.some((x) => x.id === q.id))
+      // Quests are server-owned (Phase 3). Only keep optimistic quests whose create is still in
+      // flight: a temp id the snapshot doesn't have yet, and no matching server quest of yours.
+      const localQuests = s.quests.filter((q) => isTempQuestId(q.id) && q.createdBy === 'you' && !snap.quests.some((x) => x.id === q.id
+        || (x.createdBy === 'you' && x.projectId === q.projectId && x.title === q.title)))
       return {
         ...s,
         projects: snap.projects, agents: snap.agents, quests: [...snap.quests, ...localQuests], alerts: snap.alerts, resources: snap.resources,
@@ -160,6 +168,15 @@ export function reducer(s: State, a: Action): State {
     }
     case 'resources': return { ...s, resources: a.resources }
     case 'upsertMergeRequest': return { ...s, mergeRequests: upsert(s.mergeRequests, a.mergeRequest) }
+    case 'upsertQuest': {
+      const rest = a.replaceId && a.replaceId !== a.quest.id ? s.quests.filter((q) => q.id !== a.replaceId) : s.quests
+      if (rest.some((q) => q.id === a.quest.id) || !a.replaceId) return { ...s, quests: upsert(rest, a.quest) }
+      // Keep the optimistic quest's slot so the board doesn't jump.
+      const at = s.quests.findIndex((q) => q.id === a.replaceId)
+      if (at < 0) return { ...s, quests: [...rest, a.quest] }
+      return { ...s, quests: [...s.quests.slice(0, at), a.quest, ...s.quests.slice(at + 1)] }
+    }
+    case 'removeQuest': return { ...s, quests: s.quests.filter((q) => q.id !== a.id) }
     case 'setGuards': return { ...s, guards: { ...DEFAULT_GUARDS, ...a.guards } }
     case 'setProviders': return { ...s, providers: a.providers }
     case 'upsertProvider': return { ...s, providers: upsert(s.providers, a.provider) }

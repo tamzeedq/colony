@@ -117,12 +117,16 @@ Spec: `docs/phase2.md`. The UI runs live by default; `?mock` keeps the design pr
 
 Not yet click-tested by a human: Approve from the UI, the terminal's visuals, Found base and Spawn forms against the real backend (tested by the UI subagent against a protocol fake). Not wired: Supabase toggle (Phase 4), allowed-tools, "Let Orchestrator decide", quests (Phase 3).
 
-### Phase 3 — Orchestrator & teamwork (≈1–1.5 weeks)
-- [ ] Orchestrator MCP server + role prompt: plan → create tasks → spawn/assign workers → review → request merge.
-- [ ] Worker tools; inter-agent messaging; task dependencies.
-- [ ] Merge flow: Orchestrator runs tests on the branch, opens an "approve merge?" alert, merges on approval, and handles conflicts by assigning a fix task.
-- [ ] Guardrails: max concurrent agents per project, loop detection (repeated identical tool calls / no progress for N minutes → alert), spend caps per agent.
-**Exit:** give a project a goal and the Orchestrator runs a small team to deliver it, pinging you only for decisions.
+### Phase 3 — Orchestrator & teamwork ✅ built 2026-11-10
+Spec: `docs/phase3.md`.
+- [x] Colony MCP server at `POST /mcp` (stateless Streamable HTTP, per-agent token, tools scoped by role and project). Orchestrator: create/update/list tasks, spawn/stop/assign, message, list/get status, review_branch, request_merge, request_human. Workers: report_progress, complete_task, ask_orchestrator, request_human. No merge tool for anyone.
+- [x] Quest lifecycle with dependencies: blocked quests start automatically when their dependencies merge. Merge outcomes move quests (done + XP / back to in progress / conflict → orchestrator creates a fix quest). `[Colony]` notifications keep the orchestrator informed.
+- [x] Kickoff: a new orchestrator plans first quests and asks for plan approval before staffing (prompt-enforced).
+- [x] Guardrails: max 5 live agents per base (`COLONY_MAX_AGENTS_PER_PROJECT`), loop detection (repeats + 15-minute stalls → `loop` alert + orchestrator told), per-agent caps from Phase 1.
+- [x] UI: add/cancel quests through the API; Review shows the merge summary and linked quest.
+- [x] Verified with real containers on one base: Sonnet orchestrator read the repo, created a quest, asked for plan approval, spawned a Haiku worker, which committed, pushed and completed; the orchestrator reviewed the diff and requested the merge with a summary (~1 minute end to end).
+
+Not yet: the commander's Approve click on that merge from the UI; a multi-worker run with dependencies and conflicts against real containers (covered by tests with the fake driver). "Let Orchestrator decide" in Spawn is still not wired.
 
 ### Phase 4 — Dev Supabase per project (≈3–4 days)
 - [ ] Provision on project create (toggle), port allocation, start/stop with project activity, wipe/reset button.

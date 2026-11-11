@@ -27,7 +27,7 @@ interface Ctx {
 async function setup(over: Partial<Config> = {}, dir = mkdtempSync(join(tmpdir(), 'colony-cp-')), infra = createFakeDriver()): Promise<Ctx> {
   const config = loadConfig({}, {
     dataDir: dir, dbPath: join(dir, 'colony.db'), rolesDir: join(REPO_ROOT, 'roles'),
-    oauthToken: OAUTH, port: 0, bind: '127.0.0.1', publicRunnerUrl: 'ws://host.docker.internal:7700/api/runner', ...over,
+    oauthToken: OAUTH, port: 0, bind: '127.0.0.1', publicRunnerUrl: 'ws://host.docker.internal:7700/api/runner', maxAgentsPerProject: 50, ...over,
   })
   const app = await createApp({ config, infra, poll: false, quiet: true })
   const port = await app.start(0, '127.0.0.1')

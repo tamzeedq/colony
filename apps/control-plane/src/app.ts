@@ -7,6 +7,9 @@ import type { Config } from './config'
 import { Db } from './db'
 import { GuardService } from './guards'
 import { registerRoutes } from './http'
+import { LoopDetector } from './loops'
+import { registerMcp } from './mcp'
+import { QuestService } from './quests'
 import type { InfraDriver } from './infra/types'
 import { MergeService, ProjectService } from './projects'
 import { ProviderService, type FetchLike } from './providers'
@@ -39,6 +42,8 @@ export interface ColonyApp {
   providers: ProviderService
   terminals: TerminalHub
   stats: StatsPoller
+  quests: QuestService
+  loops: LoopDetector
   /** Reconcile with Docker and start listening. Returns the bound port. */
   start(port?: number, host?: string): Promise<number>
   /** Graceful shutdown. Agent containers keep running and reconnect to the next instance. */
@@ -61,24 +66,34 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const merges = new MergeService(store, infra, agents)
   const providers = new ProviderService(store, config, opts.fetch)
   store.providerList = () => providers.list()
+  const quests = new QuestService(store, infra, agents)
+  merges.quests = quests
+  const loops = new LoopDetector(store, quests)
+  agents.hooks.afterEvent = (ev) => loops.onEvent(ev)
+  agents.hooks.afterRemove = (a) => { loops.forget(a.id); quests.onAgentRemoved(a) }
+  agents.hooks.afterCrash = (a, reason) => {
+    if (a.role !== 'orchestrator') quests.notifyOrchestrator(a.projectId, `${a.callsign} ${reason}. The commander has been alerted; reassign its quest if this blocks progress.`)
+  }
   const terminals = new TerminalHub(config, store, infra, log)
   const stats = new StatsPoller(store, infra, config.statsIntervalMs, log)
 
   const fastify = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 })
-  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers })
+  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests })
+  registerMcp(fastify, { store, agents, quests, merges, infra })
   const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
   return {
-    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats,
+    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops,
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log)
       await fastify.listen({ port, host })
-      if (opts.poll !== false) stats.start()
+      if (opts.poll !== false) { stats.start(); loops.start() }
       const addr = fastify.server.address()
       return typeof addr === 'object' && addr ? addr.port : port
     },
     async close() {
       stats.stop()
+      loops.stop()
       agents.closeAll()
       await terminals.close()
       sockets.close()

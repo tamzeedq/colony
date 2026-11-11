@@ -116,6 +116,7 @@ export function StoreProvider({ children, mode = 'live', simulate = true }: { ch
       eff.then?.(result).forEach(rawDispatch)
       return true
     } catch (e) {
+      eff.undo?.().forEach(rawDispatch)
       if (e instanceof ApiError && e.status === 401) return false // back to Pair
       toastError(`${eff.label} failed · ${errorMessage(e)}`)
       resync()

@@ -38,6 +38,12 @@ export interface PatchInput {
 export interface AgentHooks {
   afterUsage?(agentId: string): void
   afterPlanUsage?(): void
+  /** Every activity event from a runner (loop detection). */
+  afterEvent?(ev: ActivityEvent): void
+  /** An agent was removed (its quests go back to the backlog). */
+  afterRemove?(agent: Agent): void
+  /** An agent crashed or lost contact. */
+  afterCrash?(agent: Agent, reason: string): void
 }
 
 const CALLSIGN_WORDS = [
@@ -102,6 +108,8 @@ export class AgentManager {
       throw conflict('this project already has an orchestrator')
     }
     if (this.liveAgentCount() >= this.config.maxContainers) throw conflict(`container limit reached (${this.config.maxContainers})`)
+    const inProject = this.store.projectAgents(projectId).filter((a) => a.agent.status !== 'error' && a.agent.status !== 'done').length
+    if (inProject >= this.config.maxAgentsPerProject) throw conflict(`this base already has ${inProject} agents (limit ${this.config.maxAgentsPerProject}); stop one first`)
 
     let callsign = input.callsign?.trim()
     if (callsign) {
@@ -116,6 +124,7 @@ export class AgentManager {
     const orchestrator = this.store.projectAgents(projectId).find((a) => a.agent.role === 'orchestrator')?.agent.callsign
     const rolePrompt = this.roles.compose(input.role, { project: p.name, stack: p.stack, goal: p.goal, orchestrator }, input.rolePrompt)
     const budget = input.budgetCapUsd ?? this.config.defaultBudgetCapUsd
+    const task = input.task?.trim() || (input.role === 'orchestrator' && p.goal.trim() ? kickoff(p.goal) : '')
     const t = nowIso()
     const agent: Agent = {
       id, projectId, callsign, role: input.role, provider: model.provider, model: model.id,
@@ -128,7 +137,7 @@ export class AgentManager {
     const token = randomBytes(32).toString('base64url')
     const rec: AgentRecord = {
       agent, tokenHash: sha256(token), createdAt: t,
-      internal: { desired: 'run', pending: input.task?.trim() ? [input.task.trim()] : [], startedAt: t },
+      internal: { desired: 'run', pending: task ? [task] : [], startedAt: t },
     }
     this.store.saveAgent(rec)
     this.store.broadcastSnapshot()
@@ -150,6 +159,9 @@ export class AgentManager {
       COLONY_MODEL: model?.cliModel ?? a.model,
       COLONY_SYSTEM_PROMPT_B64: Buffer.from(a.rolePrompt, 'utf8').toString('base64'),
     }
+    // Colony's MCP tools (docs/phase3.md), authenticated with the same per-agent token.
+    const mcp = { mcpServers: { colony: { type: 'http', url: this.config.publicMcpUrl, headers: { Authorization: `Bearer ${token}` } } } }
+    env.COLONY_MCP_CONFIG_B64 = Buffer.from(JSON.stringify(mcp), 'utf8').toString('base64')
     if (rec.sessionId) env.COLONY_SESSION_ID = rec.sessionId
     if (this.config.oauthToken) env.CLAUDE_CODE_OAUTH_TOKEN = this.config.oauthToken
     return env
@@ -208,6 +220,7 @@ export class AgentManager {
       const rec = this.store.agents.get(agentId)
       if (!rec || this.conns.has(agentId) || rec.agent.status === 'error' || rec.agent.status === 'done') return
       this.store.patchAgent(agentId, { status: 'error', currentAction: `Lost contact: ${reason}`, container: { ...rec.agent.container, health: 'degraded' } })
+      this.hooks.afterCrash?.(rec.agent, `lost contact (${reason})`)
       this.store.raiseAlert({
         kind: 'crash', severity: 'critical', projectId: rec.agent.projectId, agentId,
         title: `${rec.agent.callsign} lost contact (${reason})`,
@@ -262,6 +275,7 @@ export class AgentManager {
         this.store.addEvent(ev)
         const action = actionFor(ev)
         if (action && action !== rec.agent.currentAction) this.store.patchAgent(agentId, { currentAction: action })
+        this.hooks.afterEvent?.(ev)
         return
       }
       case 'status':
@@ -295,6 +309,7 @@ export class AgentManager {
             title: `${rec.agent.callsign} crashed`, detail: msg.message,
             actions: [{ id: 'restart', label: '↻ Restart', primary: true }],
           })
+          this.hooks.afterCrash?.(rec.agent, `crashed: ${msg.message.slice(0, 300)}`)
         }
         return
       }
@@ -462,6 +477,7 @@ export class AgentManager {
     this.conns.delete(agentId)
     for (const a of this.store.alerts.values()) if (a.agentId === agentId && !a.resolvedAt) this.store.resolveAlert(a.id)
     this.store.deleteAgent(agentId)
+    this.hooks.afterRemove?.(rec.agent)
     this.store.broadcastSnapshot()
     return { ok: true, id: rec.agent.id }
   }
@@ -492,6 +508,20 @@ export class AgentManager {
     for (const c of this.conns.values()) c.close(1012, 'control plane restarting')
     this.conns.clear()
   }
+}
+
+/** First message to a new orchestrator: plan, then get the commander's OK before staffing. */
+export function kickoff(goal: string): string {
+  return [
+    '[Colony] Kickoff. The commander founded this base with the goal in your instructions:',
+    '',
+    `> ${goal.trim().replace(/\n/g, '\n> ')}`,
+    '',
+    '1. Read enough of the repository to understand its structure, stack and current state.',
+    '2. Create the first batch of quests with create_task (brief, acceptance criteria, dependencies).',
+    '3. Present the plan with request_human: a few lines on the approach and the quests, with options "Approve plan" and "Change it".',
+    "4. Wait for the commander's answer before you spawn or assign any workers.",
+  ].join('\n')
 }
 
 const clip = (t: string, n: number) => (t.length > n ? t.slice(0, n) + '\n…' : t)

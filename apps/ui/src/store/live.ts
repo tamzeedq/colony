@@ -1,8 +1,8 @@
 // Live mode: UI action → control-plane call (docs/phase2.md "UI action → API").
 // The reducer has already applied the optimistic update; the stream is the source of truth
-// and corrects it. Returns null for actions that stay local (UI state, toasts, quests).
+// and corrects it. Returns null for actions that stay local (UI state, toasts).
 import type { Action, State } from './reducer'
-import { endpoints, mergeRequestFrom } from '@/api/endpoints'
+import { endpoints, mergeRequestFrom, questFrom } from '@/api/endpoints'
 import type { Guards } from '@/types/colony'
 
 export interface LiveEffect {
@@ -10,6 +10,8 @@ export interface LiveEffect {
   run: () => Promise<unknown>
   /** Follow-up local actions from the response (e.g. the updated merge request). */
   then?: (result: unknown) => Action[]
+  /** Local actions that undo the optimistic update when the call fails (before the resync). */
+  undo?: () => Action[]
   label: string
 }
 
@@ -38,6 +40,25 @@ export function liveEffect(a: Action, prev: State): LiveEffect | null {
     case 'requestChanges': return {
       label: 'Request changes', run: () => endpoints.requestChanges(a.id, a.note),
       then: (r) => { const mr = mergeRequestFrom(r); return mr ? [{ type: 'upsertMergeRequest', mergeRequest: mr }] : [] },
+    }
+    // Quests (docs/phase3.md "Quest lifecycle"): the server owns them; the response replaces the optimistic copy.
+    case 'addQuest': {
+      const q = a.quest
+      return {
+        label: 'New quest',
+        run: () => endpoints.createQuest(q.projectId, { title: q.title, brief: q.brief || undefined, priority: q.priority, acceptance: q.acceptance.length ? q.acceptance.map((c) => c.text) : undefined }),
+        then: (r) => { const sq = questFrom(r); return sq ? [{ type: 'upsertQuest', quest: sq, replaceId: q.id }] : [] },
+        undo: () => [{ type: 'removeQuest', id: q.id }],
+      }
+    }
+    case 'questStatus': {
+      const before = prev.quests.find((q) => q.id === a.id)
+      return {
+        label: a.status === 'failed' ? 'Cancel quest' : 'Move quest',
+        run: () => endpoints.patchQuest(a.id, { status: a.status }),
+        then: (r) => { const sq = questFrom(r); return sq ? [{ type: 'upsertQuest', quest: sq }] : [] },
+        undo: () => (before ? [{ type: 'questStatus', id: before.id, status: before.status }] : []),
+      }
     }
     case 'downshift': {
       // Expanded by the store into setModel per worker; nothing to call for the batch itself.

@@ -174,6 +174,8 @@ export interface MergeRequest {
   status: MergeRequestStatus
   approvedBy?: 'you'          // only a human can approve; agents can never set this
   approvedAt?: ISODate
+  questId?: ID                // the quest this merge closes (Phase 3)
+  summary?: string            // the requester's at-a-glance summary for the commander
 }
 
 /** The one check every merge path must pass. */
