@@ -1,21 +1,55 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useStore, needsYou } from '@/store/store'
+import { useStore, needsYou, toastAlert, alertToasts } from '@/store/store'
 import { useAlertAction } from './AlertItem'
 import { cx } from '@/lib/util'
+import { useAlertPrefs } from '@/lib/alertPrefs'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
+import type { AlertSeverity } from '@/types/colony'
 
-/** Critical alerts pin a banner under the HUD until resolved. */
+const BANNER: Record<AlertSeverity, { bg: string; lead: string }> = {
+  critical: { bg: 'bg-st-error', lead: '✕' },
+  needs_you: { bg: 'bg-st-you', lead: '◆' },
+  heads_up: { bg: 'bg-st-blocked', lead: '▲' },
+}
+const RANK: AlertSeverity[] = ['critical', 'needs_you', 'heads_up']
+
+/**
+ * Critical alerts pin a banner under the HUD until resolved (Settings → Alerts & sound can turn it
+ * off, or turn banners on for needs-you / heads-up). A critical alert that arrives after load gives
+ * the banner a single attention flash (skipped under reduced motion).
+ */
 export function CriticalBanner() {
   const { state } = useStore()
-  const crit = state.alerts.filter((a) => a.severity === 'critical' && !a.resolvedAt)
-  if (!crit.length) return null
-  const a = crit[0]
-  const agent = state.agents.find((x) => x.id === a.agentId)
+  const [prefs] = useAlertPrefs()
+  const reduced = useMediaQuery('(prefers-reduced-motion: reduce)')
+  const initial = useRef<Set<string> | null>(null)
+  if (!initial.current) initial.current = new Set(state.alerts.map((a) => a.id))
+  const [flashId, setFlashId] = useState<string>()
+
+  const open = state.alerts.filter((a) => !a.resolvedAt && prefs.categories[a.severity].banner)
+  const sev = RANK.find((r) => open.some((a) => a.severity === r))
+  const list = sev ? open.filter((a) => a.severity === sev) : []
+  const top = list[0]
+
+  // Flash once for each new critical alert (never for the ones present at load).
+  useEffect(() => {
+    const fresh = state.alerts.filter((a) => a.severity === 'critical' && !a.resolvedAt && !initial.current!.has(a.id))
+    fresh.forEach((a) => initial.current!.add(a.id))
+    if (fresh.length && !reduced) setFlashId(fresh[0].id)
+  }, [state.alerts, reduced])
+
+  if (!top || !sev) return null
+  const agent = state.agents.find((x) => x.id === top.agentId)
+  const flash = !reduced && flashId !== undefined && sev === 'critical'
   return (
-    <div role="alert" className="flex items-center gap-3 bg-st-error px-5 py-2 text-[13px] font-semibold text-[#1B0605]">
-      <span>✕ {agent ? `${agent.callsign} crashed` : 'Critical'} · {a.title}</span>
-      {crit.length > 1 && <span className="font-normal">+{crit.length - 1} more</span>}
-      <Link to={`/inbox#${a.id}`} className="ml-auto text-[#1B0605] underline">Resolve</Link>
+    <div key={flash ? flashId : 'banner'} role={sev === 'critical' ? 'alert' : 'status'}
+      onAnimationEnd={() => setFlashId(undefined)}
+      style={flash ? { animation: 'attention 1.6s ease-out 1' } : undefined}
+      className={cx('relative z-[1] flex items-center gap-3 px-5 py-2 text-[13px] font-semibold text-[#1B0605]', BANNER[sev].bg)}>
+      <span>{BANNER[sev].lead} {sev === 'critical' ? (agent ? `${agent.callsign} crashed` : 'Critical') : agent?.callsign ?? (sev === 'needs_you' ? 'Needs you' : 'Heads-up')} · {top.title}</span>
+      {list.length > 1 && <span className="font-normal">+{list.length - 1} more</span>}
+      <Link to={`/inbox#${top.id}`} className="ml-auto text-[#1B0605] underline">{sev === 'critical' ? 'Resolve' : 'Open'}</Link>
     </div>
   )
 }
@@ -26,13 +60,13 @@ export function ToastStack() {
   const act = useAlertAction()
   const seen = useRef(new Set(state.alerts.map((a) => a.id)))
 
-  // New unresolved alerts (not heads-up) become toasts. Live mode toasts from the stream instead.
+  // New unresolved alerts become toasts (per Settings → Alerts & sound). Live mode toasts from the stream instead.
   useEffect(() => {
     if (mode !== 'mock') return
     for (const a of state.alerts) {
       if (seen.current.has(a.id)) continue
       seen.current.add(a.id)
-      if (!a.resolvedAt && a.severity !== 'heads_up') dispatch({ type: 'toast', toast: { id: a.id, alertId: a.id, title: a.title, tone: a.severity === 'critical' ? 'critical' : 'needs_you', at: Date.now() } })
+      if (!a.resolvedAt && alertToasts(a.severity)) dispatch({ type: 'toast', toast: toastAlert(a) })
     }
   }, [state.alerts, dispatch, mode])
 
@@ -78,6 +112,7 @@ function ToastCard({ toast, onDone, onPrimary, primaryLabel }: { toast: { id: st
   const tone = toast.tone === 'critical' ? { b: 'border-st-error/60', t: 'text-st-error', bar: 'bg-st-error', label: '✕ Critical' }
     : toast.tone === 'done' ? { b: 'border-st-done/50', t: 'text-st-done', bar: 'bg-st-done', label: '✓ Done' }
     : toast.tone === 'error' ? { b: 'border-st-error/60', t: 'text-st-error', bar: 'bg-st-error', label: '✕ Didn’t go through' }
+    : toast.tone === 'heads_up' ? { b: 'border-st-blocked/55', t: 'text-st-blocked', bar: 'bg-st-blocked', label: '▲ Heads-up' }
     : { b: 'border-st-you/55', t: 'text-st-you', bar: 'bg-st-you', label: '◆ Needs you' }
   return (
     <div role="status" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}

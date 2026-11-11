@@ -1,6 +1,8 @@
 # Screens
 
-Captured from the running app (`npm run build && npm run preview`, `?static`). Regenerate after changes so they stay current.
+Captured from the running app in mock data, frozen (`?mock&static`), with headless Chrome at device scale 1, full page. Regenerated 2026-11-11 (Phase 5) for every screen reachable by URL: World, Base, Roster, Spawn, Inbox, Found base, Settings (limits, alerts, roles), Merge review, Quest detail, Ambient.
+
+The screens that need a click to reach (Inspector tabs, after-spawn toast, merged review, shortcut overlay, command palette, empty and error states, ultrawide inspector) are older captures. They still match the layout, but don't show the Phase 5 map canvas controls.
 
 ## World · 1440
 

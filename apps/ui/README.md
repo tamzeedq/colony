@@ -20,7 +20,7 @@ Data layer: `src/api/` (`client.ts` REST, `stream.ts` UI stream with backoff, `t
 | `src/screens/` | One file per screen: `World`, `Base` (switches to the 1920 layout at ≥1800px), `Roster`, `Spawn`, `Inbox`, `NewProject`, `Settings`, `Review`, `Quest`, `Ambient` |
 | `src/components/hud/` | `AppShell` (HUD, nav, routes, global overlays), `ResourceHud`, `NeedsYouCounter`, `PlanLimitsPanel` |
 | `src/components/agent/` | `AgentCard`; `Inspector` drawer with Take control, Live feed / Terminal / Changes / Task / Config tabs and the composer. It docks beside the content at ≥3000px |
-| `src/components/base/` | `BaseMap` (HQ + stations + live link lines, CSS; ready for a Pixi layer), `StationCard`, `QuestBoard`, `QuestCard` |
+| `src/components/base/` | `BaseMap` (HQ + stations over a Pixi canvas: `MapScene`, `useMapCamera`, `MapMoments`), `StationCard`, `QuestBoard`, `QuestCard` |
 | `src/components/alerts/` | `AlertItem`, `useAlertAction` (every alert button → action), `ToastStack`, `CriticalBanner` |
 | `src/components/feed/` | `ActivityFeed`, `FeedRow`, `FeedIcon` |
 | `src/components/states/` | `ShortcutOverlay`, `CommandPalette` (⌘K), `EmptyWorld`, `DockerDown` |
@@ -57,8 +57,8 @@ The Inspector opens over any route; click any agent.
 - **All data and actions.** Pause, kill, restart, take control, merge, spawn and found-base update local state only.
 - **Plan usage.** The usage numbers are invented. Check what your Claude plan actually exposes and how often it can be read. If nothing is readable, set `usage.source` to `'unavailable'` and the limit panel hides.
 - **Terminal.** It echoes commands; wire it to a PTY in the agent's container.
-- **Sound.** Only the mute toggle exists; audio playback isn't built.
-- **Base map.** CSS lines; swap in PixiJS for pulses, pan and zoom.
+- **Sound.** Synthesized with Web Audio (`hooks/useSound.ts`), per-category prefs in Settings → Alerts & sound.
+- **Base map.** PixiJS layer (grid, live links, handoff pulses, pan/zoom, Follow activity); CSS lines under reduced motion. In mock mode the simulation sends orchestrator ↔ worker messages and quest completions so the map has traffic.
 
 ## Naming
 
@@ -72,5 +72,5 @@ The Inspector opens over any route; click any agent.
 
 1. Replace `src/data/mock.ts` and the simulation in `store.tsx` with your backend: Docker API, agent session streams, git.
 2. Wire Take control to really pause the agent loop after the current tool call, and connect the Terminal tab to a PTY.
-3. Add the PixiJS layer to `BaseMap`.
-4. Add sound (`useSound`) per Settings → Alerts.
+3. ~~Add the PixiJS layer to `BaseMap`.~~ Done (Phase 5).
+4. ~~Add sound (`useSound`) per Settings → Alerts.~~ Done (Phase 5).

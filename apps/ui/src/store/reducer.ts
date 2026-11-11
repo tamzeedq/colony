@@ -3,7 +3,7 @@
 import type { Agent, AgentStatus, Alert, Guards, ID, MergeRequest, ModelInfo, Project, ProviderView, Quest, Resources, Snapshot } from '@/types/colony'
 import { BUILTIN_MODELS } from '@/types/colony'
 
-export interface Toast { id: ID; alertId?: ID; title: string; tone: 'critical' | 'needs_you' | 'done' | 'error'; at: number }
+export interface Toast { id: ID; alertId?: ID; title: string; tone: 'critical' | 'needs_you' | 'heads_up' | 'done' | 'error'; at: number }
 
 export interface State {
   projects: Project[]

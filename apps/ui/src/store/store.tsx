@@ -6,7 +6,8 @@
 // with useThrottledStream). `dispatch` applies an action locally (optimistic) and, in live mode,
 // calls the matching API (store/live.ts); failures toast and trigger a resync from /api/snapshot.
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
-import type { ActivityEvent, Guards, ID, Project, Snapshot, UiStreamMessage } from '@/types/colony'
+import type { ActivityEvent, AlertSeverity, Guards, ID, Project, Snapshot, UiStreamMessage } from '@/types/colony'
+import { getAlertPrefs } from '@/lib/alertPrefs'
 import * as mock from '@/data/mock'
 import { reducer, emptyUi, DEFAULT_GUARDS, EMPTY_RESOURCES, builtinModels, type Action, type State, type Toast } from './reducer'
 import { liveEffect } from './live'
@@ -61,8 +62,11 @@ function liveState(): State {
   }
 }
 
-const toastAlert = (a: { id: ID; title: string; severity: string }): Toast =>
-  ({ id: a.id, alertId: a.id, title: a.title, tone: a.severity === 'critical' ? 'critical' : 'needs_you', at: Date.now() })
+export const toastAlert = (a: { id: ID; title: string; severity: AlertSeverity }): Toast =>
+  ({ id: a.id, alertId: a.id, title: a.title, tone: a.severity, at: Date.now() })
+
+/** Settings → Alerts & sound decides which severities toast (defaults: critical and needs-you). */
+export const alertToasts = (severity: AlertSeverity) => getAlertPrefs().categories[severity].toast
 
 export function StoreProvider({ children, mode = 'live', simulate = true }: { children: ReactNode; mode?: Mode; simulate?: boolean }) {
   const [state, rawDispatch] = useReducer(reducer, undefined, () => (mode === 'mock' ? mockState() : liveState()))
@@ -143,8 +147,30 @@ export function StoreProvider({ children, mode = 'live', simulate = true }: { ch
       if (l.kind === 'edit') rawDispatch({ type: 'agentStatus', id: ag.id, status: 'editing', action: l.text.split(' ')[0] })
       emit(e)
     }, 450)
+    // Team traffic for the base map (Phase 5): orchestrator ↔ worker messages travel the links
+    // as pulses, and now and then a worker finishes a quest (XP chip + chime).
+    let teamTicks = 0
+    const team = setInterval(() => {
+      const s = stateRef.current
+      teamTicks++
+      const orchs = s.agents.filter((x) => x.role === 'orchestrator' && x.status !== 'paused')
+      const lucky = orchs[Math.floor(Math.random() * orchs.length)] // at most one quest completes per tick
+      for (const o of orchs) {
+        const crew = s.agents.filter((x) => x.projectId === o.projectId && x.role !== 'orchestrator' && x.status !== 'error')
+        const w = crew[Math.floor(Math.random() * crew.length)]
+        if (!w) continue
+        const down = Math.random() < 0.6
+        const [from, to] = down ? [o, w] : [w, o]
+        const body = down ? 'Rebase on main before you complete, then run the suite.' : 'Pushed; tests green. Ready for review.'
+        emit({ id: `sim-msg-${Date.now()}-${n++}`, at: new Date().toISOString(), agentId: from.id, projectId: o.projectId, kind: 'message', text: `${from.callsign} → ${to.callsign}: ${body}`, message: { to: to.id, body } })
+        if (o === lucky && teamTicks % 4 === 0) {
+          const xp = [80, 120, 150][n % 3]
+          emit({ id: `sim-done-${Date.now()}-${n++}`, at: new Date().toISOString(), agentId: w.id, projectId: w.projectId, kind: 'quest_complete', text: `Quest complete (+${xp} XP)` })
+        }
+      }
+    }, 3500)
     const usage = setInterval(() => rawDispatch({ type: 'usageTick' }), 5000)
-    return () => { clearInterval(tick); clearInterval(usage) }
+    return () => { clearInterval(tick); clearInterval(team); clearInterval(usage) }
   }, [mode, simulate, emit])
 
   // ── mock: booting agents come online after a few seconds (live: the stream does this) ──
@@ -182,7 +208,7 @@ export function StoreProvider({ children, mode = 'live', simulate = true }: { ch
           // Toast alerts that appeared while we were disconnected; never the initial backlog.
           for (const al of snap.alerts) {
             if (al.resolvedAt) { seenUnresolved.delete(al.id); continue }
-            if (!first && !seenUnresolved.has(al.id) && al.severity !== 'heads_up') rawDispatch({ type: 'toast', toast: toastAlert(al) })
+            if (!first && !seenUnresolved.has(al.id) && alertToasts(al.severity)) rawDispatch({ type: 'toast', toast: toastAlert(al) })
             seenUnresolved.add(al.id)
           }
           hydrate(snap, rawGuards)
@@ -217,7 +243,7 @@ export function StoreProvider({ children, mode = 'live', simulate = true }: { ch
           if (al.resolvedAt) seenUnresolved.delete(al.id)
           else if (!seenUnresolved.has(al.id)) {
             seenUnresolved.add(al.id)
-            if (al.severity === 'critical' || al.severity === 'needs_you') rawDispatch({ type: 'toast', toast: toastAlert(al) })
+            if (alertToasts(al.severity)) rawDispatch({ type: 'toast', toast: toastAlert(al) })
           }
           rawDispatch({ type: 'upsertAlert', alert: al })
           break

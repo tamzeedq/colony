@@ -3,6 +3,7 @@ import { useStore, needsYou } from '@/store/store'
 import { Meter } from '@/components/ui/primitives'
 import { Inspector } from '@/components/agent/Inspector'
 import { ToastStack, CriticalBanner } from '@/components/alerts/Toasts'
+import { AlertEffects } from '@/components/alerts/AlertEffects'
 import { ReconnectingBanner } from '@/components/states/Connection'
 import { ShortcutOverlay, CommandPalette } from '@/components/states/Overlays'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -91,6 +92,7 @@ export function AppShell() {
       </div>
       <Inspector docked={ultra} />
       <ToastStack />
+      <AlertEffects />
       <ShortcutOverlay />
       <CommandPalette />
     </div>

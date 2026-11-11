@@ -138,11 +138,15 @@ Spec: `docs/phase4.md`.
 
 Not yet: `gen_types` against the real CLI (tests only); the merge of that migration branch awaits the commander.
 
-### Phase 5 — Game UI polish (≈1 week; screens already exist from the prototype)
-- [ ] PixiJS layer in `BaseMap`: handoff pulses, pan/zoom, follow activity.
-- [ ] Sound (`useSound`) per Settings → Alerts; desktop notifications.
-- [ ] Key-moment animations; regenerate `SCREENS.md` screenshots.
-**Exit:** the full game-like command center.
+### Phase 5 — Game UI polish ✅ built 2026-11-11
+Spec: `docs/phase5.md`.
+- [x] PixiJS v8 layer under the HTML stations in `BaseMap`: dot grid, live links with marching dashes, handoff/message pulses (clipped to the gaps between cards), spawn ghost; drag pan, wheel zoom 0.6–1.8×, Reset view, Follow activity. Reduced motion or no WebGL → the CSS lines.
+- [x] Key moments: spawn pop, crash shake, "+N XP" chip on quest complete, single attention flash on a new critical banner.
+- [x] Sound synthesized with Web Audio per category (critical / needs you / quest complete / heads-up), master volume, mute, quiet in Take control, quiet hours; Settings → Alerts & sound is real and persisted. Desktop notifications (opt-in) for critical and needs-you alerts while the tab is hidden.
+- [x] Mock simulation sends team traffic so the map has pulses; URL-reachable screenshots regenerated.
+- [x] Verified in the browser: canvas on mock and live bases, pulses drawn in the `st-think` colour, XP chip appears, Test buttons start Web Audio, reduced-motion fallback has no canvas, no console errors.
+
+Not yet: hearing the cues and seeing a desktop notification fire (the browser pane blocks both); "Level N" chips need the control plane to raise agent levels (it only counts quests today).
 
 ### Phase 6 — Hardening & polish (ongoing)
 - [ ] Survive restarts: control plane reconnects to running containers and resumes agent sessions.
