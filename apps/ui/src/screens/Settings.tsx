@@ -10,9 +10,11 @@ import { meterTone } from '@/design/status'
 import { errorMessage } from '@/api/client'
 import { useAlertPrefs, setCategoryPref, type AlertCategory } from '@/lib/alertPrefs'
 import { useSound } from '@/hooks/useSound'
+import { SpendUsage } from './SpendUsage'
 
 const SECTIONS = [
-  { id: 'limits', g: '◷', label: 'Limits & budgets' }, { id: 'alerts', g: '♪', label: 'Alerts & sound' },
+  { id: 'limits', g: '◷', label: 'Limits & budgets' }, { id: 'spend', g: '▤', label: 'Spend & usage' },
+  { id: 'alerts', g: '♪', label: 'Alerts & sound' },
   { id: 'providers', g: '◈', label: 'Providers & keys' },
   { id: 'docker', g: '▣', label: 'Docker & host' }, { id: 'teams', g: '⬡', label: 'Team templates' },
   { id: 'roles', g: '☰', label: 'Role library' }, { id: 'keys', g: '⌨', label: 'Keyboard' },
@@ -34,6 +36,7 @@ export function Settings() {
       </nav>
       <main className="flex min-w-0 max-w-[1040px] flex-[999_1_720px] flex-col gap-5.5 px-8.5 pb-10 pt-6.5">
         {section === 'limits' && <Limits />}
+        {section === 'spend' && <SpendUsage />}
         {section === 'alerts' && <AlertsSection />}
         {section === 'providers' && <Providers />}
         {section === 'docker' && <Docker />}

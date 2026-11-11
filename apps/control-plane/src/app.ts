@@ -3,6 +3,7 @@
 
 import Fastify, { type FastifyInstance } from 'fastify'
 import { AgentManager } from './agents'
+import { AnalyticsService, registerAnalyticsRoutes } from './analytics'
 import type { Config } from './config'
 import { Db } from './db'
 import { GuardService } from './guards'
@@ -50,6 +51,7 @@ export interface ColonyApp {
   quests: QuestService
   loops: LoopDetector
   supabase: SupabaseService
+  analytics: AnalyticsService
   /** Reconcile with Docker and start listening. Returns the bound port. */
   start(port?: number, host?: string): Promise<number>
   /** Graceful shutdown. Agent containers keep running and reconnect to the next instance. */
@@ -90,11 +92,13 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
 
   const fastify = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 })
   registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests, supabase })
+  const analytics = new AnalyticsService(db, store)
+  registerAnalyticsRoutes(fastify, analytics)
   registerMcp(fastify, { store, agents, quests, merges, infra, supabase })
   const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
   return {
-    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase,
+    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, analytics,
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log)
       await supabase.reconcile()
