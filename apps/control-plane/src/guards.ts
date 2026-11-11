@@ -68,6 +68,56 @@ export class GuardService {
     }
   }
 
+  /** Usage only refreshes when an agent reports it, so a session (or week) whose reset time has
+   *  passed would keep showing the old numbers, and the plan pause, forever. Roll it over here
+   *  (called on every stats tick and at boot): usage drops to 0 until the next report, the old
+   *  window's limit alerts are resolved, and workers paused by the plan guard resume when
+   *  `resumeAfterReset` is on, or the commander gets a heads-up to resume them. */
+  checkSessionRollover(now = Date.now()) {
+    const u = this.store.usage
+    if (u.source !== 'connected') return false
+    const sessionEnd = Date.parse(u.session.resetsAt)
+    const weekEnd = Date.parse(u.weekly.resetsAt)
+    const sessionOver = Number.isFinite(sessionEnd) && sessionEnd <= now
+    const weekOver = Number.isFinite(weekEnd) && weekEnd <= now
+    if (!sessionOver && !weekOver) return false
+    const next = { ...u, session: { ...u.session }, weekly: { ...u.weekly } }
+    if (sessionOver) {
+      // The next window's real end is only known from the next report; until then estimate it.
+      let end = sessionEnd
+      while (end <= now) end += 5 * 3600_000
+      next.session = { usedPct: 0, resetsAt: new Date(end).toISOString(), ratePctPerHour: 0 }
+    }
+    if (weekOver) {
+      let end = weekEnd
+      while (end <= now) end += 7 * 24 * 3600_000
+      next.weekly = { usedPct: 0, resetsAt: new Date(end).toISOString() }
+    }
+    this.store.setPlanUsage(next)
+    if (!sessionOver) return true
+    for (const a of [...this.store.alerts.values()]) {
+      if (a.kind === 'limit_pace' && !a.resolvedAt && a.title.startsWith('Session')) this.store.resolveAlert(a.id)
+    }
+    const paused = [...this.store.agents.values()].filter((r) => r.internal.pausedBy === 'plan_usage')
+    if (!paused.length) return true
+    if (this.store.guards.resumeAfterReset) {
+      for (const r of paused) this.agents.resume(r.agent.id)
+      this.store.raiseAlert({
+        kind: 'limit_pace', severity: 'heads_up',
+        title: `Session limit reset · resumed ${paused.map((r) => r.agent.callsign).join(', ')}`,
+        actions: [{ id: 'dismiss', label: 'Dismiss' }],
+      })
+    } else if (this.once(`plan_reset:${u.session.resetsAt}`)) {
+      this.store.raiseAlert({
+        kind: 'limit_pace', severity: 'needs_you',
+        title: `Session limit reset · ${paused.length} worker${paused.length === 1 ? '' : 's'} still paused`,
+        detail: `Paused by the plan guard: ${paused.map((r) => r.agent.callsign).join(', ')}. Turn on "Resume after reset" in Settings → Limits to do this automatically.`,
+        actions: [{ id: 'resume-workers', label: 'Resume workers', primary: true, actsAsYou: true }, { id: 'dismiss', label: 'Dismiss' }],
+      })
+    }
+    return true
+  }
+
   checkPlanUsage() {
     const u = this.store.usage
     if (u.source !== 'connected') return

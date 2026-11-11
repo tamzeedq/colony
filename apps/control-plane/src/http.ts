@@ -257,6 +257,16 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
     })
     return reply.status(201).send(agent)
   })
+  // "Let the Orchestrator decide" in Spawn (the orchestrator picks class + model and spawns).
+  app.post('/api/projects/:id/worker-requests', async (req, reply) => {
+    const b = body(req)
+    for (const k of Object.keys(b)) if (!['callsign', 'budgetCapUsd', 'task'].includes(k)) throw badRequest(`unknown field '${k}'`)
+    const callsign = str(b, 'callsign', { max: 24 })
+    if (callsign && !/^[A-Za-z][A-Za-z0-9]{0,15}-\d{2}$/.test(callsign)) throw badRequest('callsign must look like "Vex-07"')
+    return reply.status(202).send(quests.requestWorker(param(req, 'id'), {
+      callsign: callsign || undefined, budgetCapUsd: num(b, 'budgetCapUsd', { min: 0, max: 1000 }), task: str(b, 'task', { max: 4000 }) || undefined,
+    }))
+  })
   app.post('/api/agents/:id/message', async (req) => {
     const text = str(body(req), 'text', { required: true, max: 50_000 })
     return agents.message(param(req, 'id'), text)

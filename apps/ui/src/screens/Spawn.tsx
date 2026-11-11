@@ -48,10 +48,17 @@ export function Spawn() {
   const spawnLive = async () => {
     setBusy(true); setError('')
     try {
+      if (orch) {
+        // The orchestrator chooses class and model and spawns with spawn_agent; the new unit
+        // arrives over the stream once it does.
+        await endpoints.requestWorker(project.id, { callsign: name.trim() || undefined, budgetCapUsd: cap > 0 ? cap : undefined, task: task.trim() || undefined })
+        nav(`/base/${project.key}`)
+        return
+      }
       const agent = await endpoints.spawn(project.id, {
-        role: orch ? 'frontend' : role, model: orch ? 'sonnet-5.5' : model, callsign: name.trim() || undefined,
+        role, model, callsign: name.trim() || undefined,
         task: task.trim() || undefined, budgetCapUsd: cap > 0 ? cap : undefined,
-        rolePrompt: !orch && role === 'custom' && customPrompt.trim() ? customPrompt.trim() : undefined,
+        rolePrompt: role === 'custom' && customPrompt.trim() ? customPrompt.trim() : undefined,
       })
       if (agent?.id) dispatch({ type: 'upsertAgent', agent })
       nav(`/base/${project.key}`)
@@ -164,10 +171,10 @@ export function Spawn() {
           <div className="mt-auto flex items-center justify-end gap-2.5 pt-2">
             {error
               ? <span role="alert" className="mr-auto text-xs text-st-error">✕ {error}</span>
-              : <span className="mr-auto text-xs text-ink-dim">Boots in ~20 s · 1 container · 4 GB</span>}
+              : <span className="mr-auto text-xs text-ink-dim">{orch && mode === 'live' ? `${orchName} picks the class and model, then spawns it` : 'Boots in ~20 s · 1 container · 4 GB'}</span>}
             <Link to="/roster" className="px-3.5 py-2.5 text-[13px] text-ink-muted no-underline">Cancel · Esc</Link>
             <button type="button" onClick={spawn} disabled={busy} className="inline-flex items-center gap-2.5 rounded-lg bg-you px-5 py-3 text-[15px] font-bold text-you-ink disabled:opacity-60">
-              {busy ? `Spawning ${name}…` : <>Spawn {name}{orch ? ` · ${orchName} decides` : ''}</>} <KeyHint>↵</KeyHint>
+              {busy ? (orch ? `Asking ${orchName}…` : `Spawning ${name}…`) : orch ? <>Ask {orchName} to recruit {name}</> : <>Spawn {name}</>} <KeyHint>↵</KeyHint>
             </button>
           </div>
         </section>

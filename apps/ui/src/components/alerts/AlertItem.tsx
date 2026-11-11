@@ -35,6 +35,7 @@ export function useAlertAction() {
       case 'raise-cap': if (alert.projectId) dispatch({ type: 'cap', projectId: alert.projectId, cap: 15 }); return done()
       case 'pause-base': dispatch({ type: 'pause', ids: state.agents.filter((a) => a.projectId === alert.projectId).map((a) => a.id) }); return done()
       case 'downshift': dispatch({ type: 'downshift' }); return done()
+      case 'resume-workers': dispatch({ type: 'resume', ids: state.agents.filter((a) => a.role !== 'orchestrator' && a.status === 'paused').map((a) => a.id) }); return done()
       case 'pause-noncritical': dispatch({ type: 'pause', ids: state.agents.filter((a) => a.role === 'researcher' || a.role === 'qa').map((a) => a.id) }); return done()
       case 'inspect': if (agent) dispatch({ type: 'inspect', id: agent.id }); return
       default: return done()

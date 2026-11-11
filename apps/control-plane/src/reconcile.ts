@@ -83,6 +83,8 @@ export class StatsPoller {
   private wasUp: boolean | undefined
   /** Called when Docker becomes reachable again after being down (re-run reconcile). */
   onDockerBack?: () => Promise<void>
+  /** Called on every tick (plan-usage rollover). */
+  onTick?: () => void
 
   constructor(private store: Store, private infra: InfraDriver, private intervalMs: number, private log: Log) {}
 
@@ -102,6 +104,7 @@ export class StatsPoller {
     this.busy = true
     try {
       this.store.rollDayIfNeeded()
+      try { this.onTick?.() } catch (e) { this.log.warn(`tick hook failed: ${(e as Error).message}`) }
       this.store.sampleHost()
       this.store.dockerUp = await this.infra.ping().catch(() => false)
       const back = this.wasUp === false && this.store.dockerUp

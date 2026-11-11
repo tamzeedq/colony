@@ -96,6 +96,7 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const github = new GithubService(store, config, infra, opts.fetch)
   const terminals = new TerminalHub(config, store, infra, log)
   const stats = new StatsPoller(store, infra, config.statsIntervalMs, log)
+  stats.onTick = () => { guards.checkSessionRollover() }
   stats.onDockerBack = async () => {
     await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
     await supabase.reconcile()
@@ -114,6 +115,7 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
       await supabase.reconcile()
+      guards.checkSessionRollover()
       await fastify.listen({ port, host })
       if (opts.poll !== false) { stats.start(); loops.start(); supabase.startTimer() }
       const addr = fastify.server.address()

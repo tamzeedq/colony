@@ -30,6 +30,9 @@ export const endpoints = {
   message: (id: ID, text: string) => api('POST', `${a(id)}/message`, { text }),
   agentEvents: (id: ID, limit = 200) => api<ActivityEvent[]>('GET', `${a(id)}/events?limit=${limit}`),
   spawn: (projectId: ID, input: SpawnInput) => api<Agent>('POST', `/api/projects/${enc(projectId)}/agents`, input),
+  /** "Let the Orchestrator decide": it picks class + model and spawns the worker itself. */
+  requestWorker: (projectId: ID, input: { callsign?: string; budgetCapUsd?: number; task?: string }) =>
+    api<{ orchestratorId: ID; orchestrator: string; delivered: boolean }>('POST', `/api/projects/${enc(projectId)}/worker-requests`, input),
   agentCommits: (id: ID) => api<AgentCommits>('GET', `${a(id)}/commits`),
   checkpoint: (id: ID, label?: string) => api('POST', `${a(id)}/checkpoints`, label ? { label } : {}),
   revert: (id: ID, input: { to: string; force?: boolean }) => api<RevertResult>('POST', `${a(id)}/revert`, input),

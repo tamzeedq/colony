@@ -235,3 +235,77 @@ describe('checkpoints and revert', () => {
     ])
   })
 })
+
+// ── "Let the Orchestrator decide" in Spawn ────────────────────────────────────────
+
+describe('worker requests', () => {
+  test('the orchestrator is asked to choose and spawn; guards on callsign and missing orchestrator', async () => {
+    const c = await setup()
+    try {
+      const p = await project(c)
+      assert.equal((await api(c, 'POST', `/api/projects/${p.id}/worker-requests`, {})).status, 409, 'no orchestrator yet')
+      const o = await spawn(c, p.id, 'orchestrator')
+      const m = await connect(c, o.id)
+      assert.equal((await api(c, 'POST', `/api/projects/${p.id}/worker-requests`, { callsign: 'bad name' })).status, 400)
+      assert.equal((await api(c, 'POST', `/api/projects/${p.id}/worker-requests`, { other: 1 })).status, 400)
+      const r = await api(c, 'POST', `/api/projects/${p.id}/worker-requests`, { callsign: 'Fen-12', budgetCapUsd: 3, task: 'Add a dark mode toggle' })
+      assert.equal(r.status, 202, JSON.stringify(r.body))
+      assert.equal(r.body.orchestratorId, o.id)
+      await waitUntil(() => m.got.some((t) => t.startsWith('[Colony]') && t.includes('"Fen-12"') && t.includes('budget_cap_usd 3') && t.includes('Add a dark mode toggle')))
+      const taken = c.app.store.agents.get(o.id)!.agent.callsign
+      assert.equal((await api(c, 'POST', `/api/projects/${p.id}/worker-requests`, { callsign: taken })).status, 409, 'callsign taken')
+      m.ws.close()
+    } finally { await teardown(c) }
+  })
+})
+
+// ── plan-usage rollover after the reset time passes ──────────────────────────────────
+
+describe('session rollover', () => {
+  async function pausedWorld(resumeAfterReset: boolean) {
+    const c = await setup()
+    const p = await project(c)
+    const w = await spawn(c, p.id, 'qa')
+    await connect(c, w.id)
+    if (resumeAfterReset) c.app.store.setGuards({ resumeAfterReset: true })
+    const resetsAt = new Date(Date.now() + 60_000).toISOString()
+    c.app.store.setPlanUsage({ session: { usedPct: 95, resetsAt, ratePctPerHour: 20 }, weekly: { usedPct: 12, resetsAt: new Date(Date.now() + 86_400_000).toISOString() }, syncedAt: new Date().toISOString(), source: 'connected' })
+    c.app.guards.checkPlanUsage()
+    await waitUntil(() => status(c, w.id) === 'paused')
+    return { c, w, resetsAt }
+  }
+
+  test('nothing changes before the reset time', async () => {
+    const { c } = await pausedWorld(false)
+    try {
+      assert.equal(c.app.guards.checkSessionRollover(), false)
+      assert.equal(c.app.store.usage.session.usedPct, 95)
+    } finally { await teardown(c) }
+  })
+
+  test('after the reset: usage drops, old alerts resolve, workers stay paused with an offer', async () => {
+    const { c, w, resetsAt } = await pausedWorld(false)
+    try {
+      assert.equal(c.app.guards.checkSessionRollover(Date.parse(resetsAt) + 1000), true)
+      const u = c.app.store.usage
+      assert.equal(u.session.usedPct, 0)
+      assert.ok(Date.parse(u.session.resetsAt) > Date.parse(resetsAt))
+      assert.equal(u.weekly.usedPct, 12, 'week not over yet')
+      const open = [...c.app.store.alerts.values()].filter((a) => !a.resolvedAt && a.kind === 'limit_pace')
+      assert.equal(open.length, 1)
+      assert.match(open[0].title, /reset · 1 worker still paused/)
+      assert.ok(open[0].actions.some((x) => x.id === 'resume-workers'))
+      assert.equal(status(c, w.id), 'paused')
+      assert.equal(c.app.guards.checkSessionRollover(Date.parse(resetsAt) + 2000), false, 'only once')
+    } finally { await teardown(c) }
+  })
+
+  test('with resumeAfterReset on, paused workers resume', async () => {
+    const { c, w, resetsAt } = await pausedWorld(true)
+    try {
+      c.app.guards.checkSessionRollover(Date.parse(resetsAt) + 1000)
+      await waitUntil(() => status(c, w.id) !== 'paused')
+      assert.ok([...c.app.store.alerts.values()].some((a) => !a.resolvedAt && /resumed/.test(a.title)))
+    } finally { await teardown(c) }
+  })
+})
