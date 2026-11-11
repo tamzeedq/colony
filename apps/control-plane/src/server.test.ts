@@ -245,6 +245,7 @@ describe('agents and runners', () => {
     runner.send({ type: 'usage', inputTokens: 1000, outputTokens: 500, costUsd: 0.25 })
     const resetsAt = new Date(Date.now() + 2 * 3600_000).toISOString()
     runner.send({ type: 'plan_usage', usage: { session: { usedPct: 30, resetsAt, ratePctPerHour: 0 }, weekly: { usedPct: 10, resetsAt }, syncedAt: new Date().toISOString(), source: 'connected' } })
+    runner.send({ type: 'plan_usage', usage: { session: { usedPct: 34, resetsAt, ratePctPerHour: 0 }, weekly: { usedPct: 10, resetsAt }, syncedAt: new Date().toISOString(), source: 'connected' } }) // +4 points credited to this agent
 
     const got = await ui.waitFor((m) => m.type === 'event' && m.event.id === 'toolu_1')
     assert.ok(got.type === 'event')
@@ -276,7 +277,7 @@ describe('agents and runners', () => {
     assert.ok(p.agentIds.includes(agent.id))
     const a = s2.agents.find((x) => x.id === agent.id)!
     assert.equal(a.level, 1)
-    assert.ok(a.sessionShare > 0)
+    assert.equal(a.sessionShare, 0.04) // only the rise between this agent's own reports
     // invalid frames are ignored, the connection stays up
     runner.ws.send('{"type":"nonsense"}')
     runner.ws.send('not json')

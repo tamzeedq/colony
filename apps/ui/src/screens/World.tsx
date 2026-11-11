@@ -7,7 +7,7 @@ import { ActivityFeed } from '@/components/feed/ActivityFeed'
 import { AlertItem } from '@/components/alerts/AlertItem'
 import { KeyHint } from '@/components/ui/primitives'
 import { Segments } from '@/components/ui/controls'
-import { EmptyWorld } from '@/components/states/EmptyStates'
+import { EmptyWorld, DockerDown } from '@/components/states/EmptyStates'
 import { cx, usd } from '@/lib/util'
 
 const HEALTH = {
@@ -75,12 +75,14 @@ export function BaseTile({ project }: { project: Project }) {
 
 export function World() {
   const { state } = useStore()
-  if (!state.projects.length) return <EmptyWorld />
+  const dockerDown = state.resources.host.docker === 'down'
+  if (!state.projects.length) return dockerDown ? <><DockerDown /><EmptyWorld /></> : <EmptyWorld />
   const working = state.agents.filter((a) => ['running', 'editing', 'thinking'].includes(a.status)).length
   const top = needsYou(state).slice(0, 4)
   return (
     <div className="flex flex-wrap">
       <main className="min-w-0 flex-[999_1_720px] px-7 pb-5 pt-6">
+        {dockerDown && <div className="-mx-6 -mt-6 mb-2"><DockerDown /></div>}
         <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="text-label mb-1.5">Command overview · {new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</div>

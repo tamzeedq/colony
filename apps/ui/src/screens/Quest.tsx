@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import type { Quest as QuestT } from '@/types/colony'
-import { QUEST_STATUS, ROLES, MODELS } from '@/design/status'
+import { QUEST_STATUS, ROLES, modelInfo } from '@/design/status'
 import { useStore } from '@/store/store'
 import { StatusBadge, ModelBadge, RoleTile, Button } from '@/components/ui/primitives'
 import { Bar, inputCls } from '@/components/ui/controls'
@@ -109,7 +109,7 @@ export function Quest() {
                 <ModelBadge model={agent.model} compact />
               </button>
             ) : <p className="m-0 text-[13px] text-ink-dim">Unassigned · the Orchestrator picks someone when dependencies clear.</p>}
-            {agent && <div className="mt-2.5 text-xs text-ink-dim">{ROLES[agent.role].name} · {MODELS[agent.model].name}</div>}
+            {agent && <div className="mt-2.5 text-xs text-ink-dim">{ROLES[agent.role].name} · {modelInfo(agent.model).name}</div>}
           </section>
           <section className="grid grid-cols-2 gap-3.5 rounded-xl border border-line bg-surface p-3.5">
             {[['Time on quest', '2h 17m', 'started 13:31'], ['Session used', agent ? `${Math.round(agent.sessionShare * 100)}%` : '—', "of today's window"], ['Spend', agent ? usd(agent.spendTodayUsd) : '—', 'this agent today'], ['Reward', `+${quest.xpReward} XP`, 'on merge']].map(([l, v, s]) => (

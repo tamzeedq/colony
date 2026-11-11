@@ -67,6 +67,8 @@ export function slugify(name: string): string {
 
 type Listener = (msg: UiStreamMessage) => void
 
+export type ColonySnapshot = Snapshot & { guards: Guards }
+
 export class Store {
   readonly projects = new Map<string, ProjectRecord>()
   readonly agents = new Map<string, AgentRecord>()
@@ -74,6 +76,7 @@ export class Store {
   readonly mergeRequests = new Map<string, MergeRequest>()
   readonly quests = new Map<string, Quest>()
   usage: PlanUsage
+  sessionShares: { resetsAt: string; byAgent: Record<string, number> } = { resetsAt: "", byAgent: {} }
   guards: Guards
   dockerUp = false
   runningContainers = 0
@@ -98,6 +101,7 @@ export class Store {
     for (const r of db.all('SELECT json FROM merge_requests')) { const m = JSON.parse(String(r.json)) as MergeRequest; this.mergeRequests.set(m.id, m) }
     for (const r of db.all('SELECT json FROM quests')) { const q = JSON.parse(String(r.json)) as Quest; this.quests.set(q.id, q) }
     this.usage = db.kvGet<PlanUsage>('plan_usage') ?? defaultPlanUsage()
+    this.sessionShares = db.kvGet<{ resetsAt: string; byAgent: Record<string, number> }>('session_shares') ?? { resetsAt: '', byAgent: {} }
     this.guards = { ...DEFAULT_GUARDS, ...(db.kvGet<Guards>('guards') ?? {}) }
     this.recomputeSpend()
   }
@@ -310,16 +314,26 @@ export class Store {
   spendMonth(): number {
     return round2(Number(this.db.get('SELECT COALESCE(SUM(cost_usd), 0) AS s FROM usage_daily WHERE day LIKE ?', this.day.slice(0, 7) + '-%')?.s ?? 0))
   }
-  setPlanUsage(u: PlanUsage) {
+  /** Credit an agent with the rise in session usage between its own plan_usage reports, so a
+   *  base's share reflects what Colony's agents used, not the whole plan (which also counts usage
+   *  outside Colony). The first report in a window has no baseline and credits nothing. */
+  setPlanUsage(u: PlanUsage, fromAgentId?: string) {
+    const prev = this.usage
+    if (this.sessionShares.resetsAt !== u.session.resetsAt) this.sessionShares = { resetsAt: u.session.resetsAt, byAgent: {} }
+    else if (fromAgentId && prev.source === 'connected' && prev.session.resetsAt === u.session.resetsAt) {
+      const delta = u.session.usedPct - prev.session.usedPct
+      if (delta > 0) this.sessionShares.byAgent[fromAgentId] = (this.sessionShares.byAgent[fromAgentId] ?? 0) + delta
+    }
+    this.db.kvSet('session_shares', this.sessionShares)
     this.usage = u
     this.db.kvSet('plan_usage', u)
     this.broadcastResources()
   }
 
   // ── derived views ──
-  private sessionShareOf(tokens: number, totalTokens: number) {
-    if (this.usage.source !== 'connected' || totalTokens <= 0) return 0
-    return round2((tokens / totalTokens) * (this.usage.session.usedPct / 100))
+  private sessionShareOf(agentIds: string[]) {
+    if (this.usage.source !== 'connected') return 0
+    return round2(agentIds.reduce((n, id) => n + (this.sessionShares.byAgent[id] ?? 0), 0) / 100)
   }
   private totalTokens() {
     let t = 0
@@ -335,7 +349,7 @@ export class Store {
     return {
       ...a,
       level, xp,
-      sessionShare: this.sessionShareOf(a.tokensToday, totalTokens),
+      sessionShare: this.sessionShareOf([a.id]),
       uptimeSec: live && Number.isFinite(started) ? Math.max(0, Math.round((Date.now() - started) / 1000)) : 0,
     }
   }
@@ -351,7 +365,7 @@ export class Store {
       orchestratorId: agents.find((a) => a.agent.role === 'orchestrator')?.agent.id,
       health: projectHealth(agents.map((a) => a.agent)),
       spendTodayUsd: round2(agents.reduce((s, a) => s + a.agent.spendTodayUsd, 0)),
-      sessionShare: this.sessionShareOf(tokens, totalTokens),
+      sessionShare: this.sessionShareOf(agents.map((x) => x.agent.id)),
       unreadAlerts: unread,
     }
   }
@@ -381,17 +395,32 @@ export class Store {
     return { cpuPct: this.hostCpuPct, memUsedGb: gb(tot - freemem()), memTotalGb: gb(tot) }
   }
 
-  providers(): ProviderConfig[] {
+  /** Provider list for snapshots; app.ts points this at the ProviderService. */
+  providerList: () => ProviderConfig[] = () => {
     const has = !!this.config.oauthToken
     return [{
       id: 'claude-subscription', label: 'Claude subscription', kind: 'subscription', hasKey: has,
       models: [...BUILTIN_MODEL_IDS], status: has ? 'untested' : 'missing_key',
     }]
   }
+  providers(): ProviderConfig[] { return this.providerList() }
 
-  snapshot(): Snapshot {
+  // ── guards ──
+  /** Merge a (validated) patch into the guards, persist in kv, and resend the snapshot. */
+  setGuards(patch: Partial<Guards>): Guards {
+    const next: Guards = { ...this.guards, ...patch }
+    for (const k of Object.keys(next) as (keyof Guards)[]) if (next[k] === undefined) delete next[k]
+    this.guards = next
+    this.db.kvSet('guards', next)
+    this.broadcastSnapshot()
+    return next
+  }
+
+  /** Snapshot plus `guards` (docs/phase2.md; not yet in the shared SnapshotSchema). */
+  snapshot(): ColonySnapshot {
     const total = this.totalTokens()
     return {
+      guards: { ...this.guards },
       projects: [...this.projects.values()].sort((a, b) => (a.project.key || 99) - (b.project.key || 99)).map((p) => this.toProject(p, total)),
       agents: [...this.agents.values()].map((a) => this.toAgent(a, total)),
       quests: [...this.quests.values()],

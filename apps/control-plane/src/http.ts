@@ -3,11 +3,13 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { PROTOCOL_VERSION, ROLE_IDS, type RoleId } from '@colony/shared'
+import { PROTOCOL_VERSION, ROLE_IDS, type Guards, type RoleId } from '@colony/shared'
 import type { AgentManager } from './agents'
 import type { Config } from './config'
 import { badRequest, HttpError } from './errors'
+import type { GuardService } from './guards'
 import type { MergeService, ProjectService } from './projects'
+import type { ProviderService, ProviderUpdate } from './providers'
 import type { Store } from './store'
 import { assertRepoUrl } from './infra/validate'
 
@@ -17,6 +19,8 @@ export interface HttpDeps {
   agents: AgentManager
   projects: ProjectService
   merges: MergeService
+  guards: GuardService
+  providers: ProviderService
 }
 
 // ── validation helpers ────────────────────────────────────────────────────────
@@ -63,6 +67,35 @@ function strList(o: Obj, k: string): string[] | undefined {
   return (v as string[]).map((s) => s.trim()).filter(Boolean)
 }
 
+const GUARD_PCT_KEYS = ['warnAtPct', 'pauseWorkersAtPct', 'orchestratorReservePct', 'weeklyWarnAtPct', 'autoDownshiftAtPct'] as const
+const GUARD_BOOL_KEYS = ['paceForecast', 'resumeAfterReset'] as const
+
+/** Validate a partial Guards patch: percentages 0–100, booleans, no unknown keys.
+ *  `autoDownshiftAtPct: null` clears the optional threshold. */
+export function parseGuardsPatch(b: Obj): Partial<Guards> {
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(b)) {
+    if (!(GUARD_PCT_KEYS as readonly string[]).includes(k) && !(GUARD_BOOL_KEYS as readonly string[]).includes(k)) {
+      throw badRequest(`unknown guard '${k}'`)
+    }
+  }
+  for (const k of GUARD_PCT_KEYS) {
+    if (!(k in b)) continue
+    if (b[k] === null) {
+      if (k !== 'autoDownshiftAtPct') throw badRequest(`'${k}' must be a number`)
+      out[k] = undefined
+      continue
+    }
+    out[k] = num(b, k, { min: 0, max: 100 })
+  }
+  for (const k of GUARD_BOOL_KEYS) {
+    if (!(k in b)) continue
+    if (typeof b[k] !== 'boolean') throw badRequest(`'${k}' must be a boolean`)
+    out[k] = b[k]
+  }
+  return out as Partial<Guards>
+}
+
 const param = (req: FastifyRequest, k: string) => String((req.params as Obj)[k] ?? '')
 const query = (req: FastifyRequest) => (req.query ?? {}) as Record<string, string | undefined>
 const truthy = (v: string | undefined) => v === '1' || v === 'true'
@@ -91,7 +124,7 @@ export function checkAdmin(config: Config, headers: Record<string, string | stri
 // ── routes ────────────────────────────────────────────────────────────────────
 
 export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
-  const { store, agents, projects, merges, config } = d
+  const { store, agents, projects, merges, config, guards, providers } = d
 
   // Accept empty JSON bodies (e.g. POST /pause sent with a JSON content type).
   app.removeContentTypeParser('application/json')
@@ -139,6 +172,15 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
     })
     return reply.status(201).send(project)
   })
+  app.patch('/api/projects/:id', async (req) => {
+    const b = body(req)
+    const goal = str(b, 'goal', { max: 4000 })
+    const dailyCapUsd = num(b, 'dailyCapUsd', { min: 0 })
+    if (goal === undefined && dailyCapUsd === undefined) throw badRequest("send 'goal' and/or 'dailyCapUsd'")
+    const r = projects.patch(param(req, 'id'), { goal, dailyCapUsd })
+    if (dailyCapUsd !== undefined) guards.checkProjectBudget(r.project.id)
+    return r
+  })
   app.delete('/api/projects/:id', async (req) => projects.remove(param(req, 'id'), { purge: truthy(query(req).purge) }))
   app.get('/api/projects/:id/branches', async (req) => projects.branches(param(req, 'id')))
   app.get('/api/projects/:id/diff', async (req, reply) => {
@@ -166,6 +208,12 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
   app.post('/api/agents/:id/message', async (req) => {
     const text = str(body(req), 'text', { required: true, max: 50_000 })
     return agents.message(param(req, 'id'), text)
+  })
+  app.post('/api/agents/pause-all', async () => agents.pauseAll())
+  app.post('/api/agents/:id/take-control', async (req) => agents.takeControl(param(req, 'id')))
+  app.post('/api/agents/:id/hand-back', async (req) => {
+    const note = str(body(req), 'note', { max: 10_000 })
+    return agents.handBack(param(req, 'id'), note || undefined)
   })
   app.post('/api/agents/:id/pause', async (req) => agents.pause(param(req, 'id'), 'you'))
   app.post('/api/agents/:id/resume', async (req) => agents.resume(param(req, 'id')))
@@ -204,6 +252,61 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
     return reply.status(201).send(mr)
   })
   app.post('/api/merge-requests/:id/approve', async (req) => merges.approve(param(req, 'id')))
+  app.post('/api/merge-requests/:id/request-changes', async (req) => {
+    const note = str(body(req), 'note', { required: true, max: 20_000 })
+    return merges.requestChanges(param(req, 'id'), note)
+  })
+
+  // guards
+  app.get('/api/guards', async () => store.guards)
+  app.patch('/api/guards', async (req) => {
+    const next = store.setGuards(parseGuardsPatch(body(req)))
+    guards.checkPlanUsage() // a lowered threshold applies right away
+    return next
+  })
+
+  // providers (keys are write-only: responses carry hasKey / keyHint / status, never the key)
+  app.get('/api/providers', async () => providers.list())
+  app.put('/api/providers/:id', async (req) => {
+    const id = providers.mustId(param(req, 'id'))
+    const b = body(req)
+    for (const k of Object.keys(b)) if (!['apiKey', 'baseUrl', 'models'].includes(k)) throw badRequest(`unknown field '${k}'`)
+    const u: ProviderUpdate = {}
+    if (b.apiKey !== undefined) {
+      if (typeof b.apiKey !== 'string' || !b.apiKey.trim()) throw badRequest("'apiKey' must be a non-empty string (use DELETE /api/providers/:id/key to remove it)")
+      const k = b.apiKey.trim()
+      if (k.length > 1000 || /[\s\x00-\x1f\x7f]/.test(k)) throw badRequest("'apiKey' must be at most 1000 characters with no whitespace or control characters")
+      u.apiKey = k
+    }
+    if (b.baseUrl !== undefined) {
+      const url = str(b, 'baseUrl', { max: 500 }) ?? ''
+      if (url) {
+        let parsed: URL
+        try { parsed = new URL(url) } catch { throw badRequest("'baseUrl' must be an http(s) URL") }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw badRequest("'baseUrl' must be an http(s) URL")
+        if (parsed.username || parsed.password) throw badRequest("'baseUrl' must not contain credentials")
+      }
+      u.baseUrl = url
+    }
+    if (b.models !== undefined) {
+      const models = strList(b, 'models') ?? []
+      if (models.length > 100 || models.some((m) => m.length > 100)) throw badRequest("'models' must be at most 100 ids of at most 100 characters")
+      u.models = [...new Set(models)]
+    }
+    const view = providers.update(id, u)
+    store.broadcastSnapshot()
+    return view
+  })
+  app.delete('/api/providers/:id/key', async (req) => {
+    const view = providers.deleteKey(providers.mustId(param(req, 'id')))
+    store.broadcastSnapshot()
+    return view
+  })
+  app.post('/api/providers/:id/test', async (req) => {
+    const view = await providers.test(providers.mustId(param(req, 'id')))
+    store.broadcastSnapshot()
+    return view
+  })
 
   // alerts (addition: lets the UI dismiss/resolve an alert)
   app.post('/api/alerts/:id/resolve', async (req) => {

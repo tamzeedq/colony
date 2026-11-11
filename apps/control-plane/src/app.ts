@@ -9,9 +9,11 @@ import { GuardService } from './guards'
 import { registerRoutes } from './http'
 import type { InfraDriver } from './infra/types'
 import { MergeService, ProjectService } from './projects'
+import { ProviderService, type FetchLike } from './providers'
 import { reconcile, StatsPoller } from './reconcile'
 import { RoleLibrary } from './roles'
 import { Store } from './store'
+import { TerminalHub } from './terminal'
 import { attachWebSockets } from './ws'
 
 export interface AppOptions {
@@ -22,6 +24,8 @@ export interface AppOptions {
   /** Skip the background stats poller (tests drive tick() themselves). */
   poll?: boolean
   quiet?: boolean
+  /** fetch used for provider connection tests (tests inject a fake). */
+  fetch?: FetchLike
 }
 
 export interface ColonyApp {
@@ -32,6 +36,8 @@ export interface ColonyApp {
   guards: GuardService
   projects: ProjectService
   merges: MergeService
+  providers: ProviderService
+  terminals: TerminalHub
   stats: StatsPoller
   /** Reconcile with Docker and start listening. Returns the bound port. */
   start(port?: number, host?: string): Promise<number>
@@ -52,15 +58,18 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const agents = new AgentManager(store, infra, config, roles, log)
   const guards = new GuardService(store, agents)
   const projects = new ProjectService(store, infra, agents, config)
-  const merges = new MergeService(store, infra)
+  const merges = new MergeService(store, infra, agents)
+  const providers = new ProviderService(store, config, opts.fetch)
+  store.providerList = () => providers.list()
+  const terminals = new TerminalHub(config, store, infra, log)
   const stats = new StatsPoller(store, infra, config.statsIntervalMs, log)
 
   const fastify = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 })
-  registerRoutes(fastify, { config, store, agents, projects, merges })
-  const sockets = attachWebSockets(fastify.server, { config, store, agents, log })
+  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers })
+  const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
   return {
-    fastify, db, store, agents, guards, projects, merges, stats,
+    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats,
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log)
       await fastify.listen({ port, host })
@@ -71,6 +80,7 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
     async close() {
       stats.stop()
       agents.closeAll()
+      await terminals.close()
       sockets.close()
       await fastify.close()
       store.dispose()

@@ -1,7 +1,7 @@
 // The smallest Ops Deck pieces. Every screen builds on these.
 import type { ReactNode } from 'react'
 import type { AgentStatus, ModelId, RoleId } from '@/types/colony'
-import { STATUS, MOTION_CLASS, MODELS, ROLES, meterTone } from '@/design/status'
+import { STATUS, MOTION_CLASS, modelInfo, ROLES, meterTone } from '@/design/status'
 
 import { cx } from '@/lib/util'
 
@@ -18,7 +18,7 @@ export function StatusBadge({ status, compact = false }: { status: AgentStatus; 
 }
 
 export function ModelBadge({ model, compact = false }: { model: ModelId; compact?: boolean }) {
-  const m = MODELS[model]
+  const m = modelInfo(model)
   return (
     <span className="whitespace-nowrap rounded-xs border border-line-strong px-1.5 py-0.5 font-mono text-[10px] text-ink-soft"
       title={m.name}>

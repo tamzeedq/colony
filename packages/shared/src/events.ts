@@ -12,7 +12,7 @@
 
 import { z } from 'zod'
 import { AGENT_STATUSES } from './domain'
-import type { Agent, Alert, Project, Quest, Resources, MergeRequest, ProviderConfig, ModelInfo, PlanUsage } from './domain'
+import type { Agent, Alert, Project, Quest, Resources, MergeRequest, ProviderConfig, ModelInfo, PlanUsage, Guards } from './domain'
 
 export const PROTOCOL_VERSION = 1
 
@@ -124,6 +124,7 @@ export const SnapshotSchema = z.object({
   mergeRequests: z.array(obj<MergeRequest>()).optional(),
   providers: z.array(obj<ProviderConfig>()).optional(),
   models: z.array(obj<ModelInfo>()).optional(),       // full registry (built-ins + added)
+  guards: obj<Guards>().optional(),                   // current limit thresholds
 })
 export type Snapshot = z.infer<typeof SnapshotSchema>
 

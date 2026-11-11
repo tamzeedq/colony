@@ -13,11 +13,13 @@ export function Ambient() {
   const n = needsYou(state)
   const u = state.resources.usage
   const mins = minutesToSessionLimit(u)
-  const rings = [
+  const allRings = [
     { l: 'Session', v: u.session.usedPct, sub: `resets in ${untilLabel(u.session.resetsAt)}`, state: mins != null ? `Runs out in ~${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m` : 'Steady', warn: state.guards.warnAtPct },
     { l: 'Weekly', v: u.weekly.usedPct, sub: `resets in ${untilLabel(u.weekly.resetsAt)}`, state: u.weekly.usedPct >= state.guards.weeklyWarnAtPct ? '▲ Watch the pace' : 'On pace', warn: state.guards.weeklyWarnAtPct },
-    { l: 'Spend today', v: (state.resources.spendTodayUsd / state.resources.dailyCapUsd) * 100, sub: `${usd(state.resources.spendTodayUsd)} of ${usd(state.resources.dailyCapUsd)}`, state: 'Normal', warn: 80 },
+    { l: 'Spend today', v: state.resources.dailyCapUsd ? (state.resources.spendTodayUsd / state.resources.dailyCapUsd) * 100 : 0, sub: `${usd(state.resources.spendTodayUsd)} of ${usd(state.resources.dailyCapUsd)}`, state: 'Normal', warn: 80 },
   ]
+  // Without readable plan usage, only the spend ring stays (design: hide limit meters).
+  const rings = u.source === 'unavailable' ? allRings.slice(2) : allRings
   const done = state.quests.filter((q) => q.status === 'done').slice(-3)
   return (
     <div className="flex min-h-screen flex-col gap-9 bg-[#07090C] px-14 py-12 text-ink">

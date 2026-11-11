@@ -22,28 +22,30 @@ export function CriticalBanner() {
 
 /** Needs-you alerts toast in, max 2 stacked, 8 s drain that pauses on hover. */
 export function ToastStack() {
-  const { state, dispatch } = useStore()
+  const { state, dispatch, mode } = useStore()
   const act = useAlertAction()
   const seen = useRef(new Set(state.alerts.map((a) => a.id)))
 
-  // New unresolved alerts (not heads-up) become toasts.
+  // New unresolved alerts (not heads-up) become toasts. Live mode toasts from the stream instead.
   useEffect(() => {
+    if (mode !== 'mock') return
     for (const a of state.alerts) {
       if (seen.current.has(a.id)) continue
       seen.current.add(a.id)
       if (!a.resolvedAt && a.severity !== 'heads_up') dispatch({ type: 'toast', toast: { id: a.id, alertId: a.id, title: a.title, tone: a.severity === 'critical' ? 'critical' : 'needs_you', at: Date.now() } })
     }
-  }, [state.alerts, dispatch])
+  }, [state.alerts, dispatch, mode])
 
-  // Demo: an agent asks a question 25 s after load.
+  // Demo (mock only): an agent asks a question 25 s after load.
   useEffect(() => {
+    if (mode !== 'mock') return
     const t = setTimeout(() => dispatch({ type: 'addAlert', alert: {
       id: 'a-demo-q', at: new Date().toISOString(), kind: 'question', severity: 'needs_you', projectId: 'p-readable', agentId: 'mira-12',
       title: 'Send reminder emails at 7pm local time, or let readers pick a time?',
       actions: [{ id: 'reply:7pm local', label: '7pm local' }, { id: 'reply:Let readers pick', label: 'Let readers pick' }],
     } }), 25000)
     return () => clearTimeout(t)
-  }, [dispatch])
+  }, [dispatch, mode])
 
   const toasts = state.ui.toasts.slice(-2)
   const extra = needsYou(state).length - toasts.filter((t) => t.alertId).length
@@ -75,6 +77,7 @@ function ToastCard({ toast, onDone, onPrimary, primaryLabel }: { toast: { id: st
   }, [paused])
   const tone = toast.tone === 'critical' ? { b: 'border-st-error/60', t: 'text-st-error', bar: 'bg-st-error', label: '✕ Critical' }
     : toast.tone === 'done' ? { b: 'border-st-done/50', t: 'text-st-done', bar: 'bg-st-done', label: '✓ Done' }
+    : toast.tone === 'error' ? { b: 'border-st-error/60', t: 'text-st-error', bar: 'bg-st-error', label: '✕ Didn’t go through' }
     : { b: 'border-st-you/55', t: 'text-st-you', bar: 'bg-st-you', label: '◆ Needs you' }
   return (
     <div role="status" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}

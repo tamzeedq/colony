@@ -52,6 +52,29 @@ export class ProjectService {
     return this.store.toProject(rec)
   }
 
+  /** Update goal and/or daily cap. A new goal is forwarded to the orchestrator, if any. */
+  patch(id: string, input: { goal?: string; dailyCapUsd?: number }) {
+    const rec = this.get(id)
+    const p = rec.project
+    const goalChanged = input.goal !== undefined && input.goal !== p.goal
+    rec.project = {
+      ...p,
+      ...(input.goal !== undefined ? { goal: input.goal } : {}),
+      ...(input.dailyCapUsd !== undefined ? { dailyCapUsd: input.dailyCapUsd } : {}),
+    }
+    this.store.saveProject(rec)
+    let forwardedTo: string | undefined
+    if (goalChanged && input.goal) {
+      const orch = this.store.projectAgents(id).find((a) => a.agent.role === 'orchestrator')
+      if (orch) {
+        this.agents.message(orch.agent.id, `New goal from the commander: ${input.goal}`)
+        forwardedTo = orch.agent.id
+      }
+    }
+    this.store.broadcastSnapshot()
+    return { project: this.store.toProject(rec), forwardedTo }
+  }
+
   async remove(id: string, opts: { purge?: boolean } = {}) {
     const rec = this.get(id)
     for (const a of this.store.projectAgents(id)) await this.agents.kill(a.agent.id, opts)
@@ -84,7 +107,7 @@ export interface CreateMergeRequestInput {
 }
 
 export class MergeService {
-  constructor(private store: Store, private infra: InfraDriver) {}
+  constructor(private store: Store, private infra: InfraDriver, private agents?: AgentManager) {}
 
   get(id: string) {
     const mr = this.store.mergeRequests.get(id)
@@ -122,6 +145,25 @@ export class MergeService {
     const approved: MergeRequest = { ...mr, status: 'approved', approvedBy: 'you', approvedAt: nowIso() }
     this.store.saveMergeRequest(approved)
     return this.merge(approved.id)
+  }
+
+  /** The commander sends the branch back: status changes_requested, the note goes to the
+   *  requesting agent (queued if its runner is offline), and the approval alert is resolved. */
+  requestChanges(id: string, note: string): MergeRequest {
+    const mr = this.get(id)
+    if (mr.status === 'merged') throw conflict('merge request is already merged')
+    const next: MergeRequest = { ...mr, status: 'changes_requested' }
+    delete next.approvedBy
+    delete next.approvedAt
+    this.store.saveMergeRequest(next)
+    this.store.resolveAlert(this.alertId(mr.id))
+    if (mr.requestedBy !== 'you' && this.store.agents.has(mr.requestedBy) && this.agents) {
+      this.agents.message(mr.requestedBy,
+        `The commander requested changes on your merge request for ${mr.branch} → main:\n${note}\n\n` +
+        `Address this, push to ${mr.branch}, and request the merge again.`)
+    }
+    this.store.broadcastSnapshot()
+    return next
   }
 
   /** Merge an approved request. Refuses unless canMergeToMain() passes. */

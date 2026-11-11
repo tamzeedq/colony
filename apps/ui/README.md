@@ -3,11 +3,15 @@
 A runnable React + TypeScript + Tailwind v4 app with every Ops Deck screen built on mock data, plus the tokens, types and docs behind it. Screenshots of every screen are in [`SCREENS.md`](SCREENS.md).
 
 ```bash
-npm install
-npm run dev        # http://localhost:5173 — live simulation on
-                   # add ?static to the URL to freeze the simulation
+npm run dev        # http://localhost:5173 — live mode: talks to the control plane on :7700 via the /api proxy
+                   # ?mock  = design seed data + simulation (sticks for the tab; ?live switches back)
+                   # ?mock&static = mock data, simulation frozen
 npm run build      # type-check + production build
 ```
+
+**Live mode (default)** needs the admin token. Open the `http://localhost:5173/#pair=<token>` link the control plane prints, or paste the token from `.colony/admin-token` on the Pair screen. The token lives in `localStorage['colony.adminToken']`; a 401 clears it. The Vite proxy forwards `/api` (HTTP + WebSocket) as-is and never adds the token (docs/phase2.md). Set `COLONY_CONTROL_PLANE_URL` to proxy somewhere other than `http://127.0.0.1:7700`.
+
+Data layer: `src/api/` (`client.ts` REST, `stream.ts` UI stream with backoff, `terminal.ts` agent shell, `endpoints.ts` every route, `token.ts` pairing) and `src/store/` (`reducer.ts` state, `live.ts` action → API mapping, `store.tsx` provider with the mock simulation and the live stream).
 
 ## What's inside
 
@@ -21,7 +25,7 @@ npm run build      # type-check + production build
 | `src/components/feed/` | `ActivityFeed`, `FeedRow`, `FeedIcon` |
 | `src/components/states/` | `ShortcutOverlay`, `CommandPalette` (⌘K), `EmptyWorld`, `DockerDown` |
 | `src/components/ui/` | Primitives (`StatusBadge`, `ModelBadge`, `RoleTile`, `Meter`, `Button`, `Panel`, `KeyHint`) and controls (`Tabs`, `Segmented`, `Chip`, `Switch`, `Field`, `Bar`, `Segments`) |
-| `src/store/store.tsx` | State, reducer, selectors and the live simulation. Replace the simulation with your WebSocket/SSE stream |
+| `src/store/` | State + reducer (`reducer.ts`), live action → API mapping (`live.ts`), provider with mock simulation / live stream and selectors (`store.tsx`) |
 | `src/data/mock.ts` | Seed data matching the design (4 projects, 16 agents, quests, alerts, usage) |
 | `src/hooks/` | `useThrottledStream` (2 Hz, grouping, hover-freeze), `useHotkeys` (the full keyboard map), `useMediaQuery` |
 | `src/design/status.ts` | The single status / model / role / alert table every component reads from |
@@ -40,8 +44,8 @@ npm run build      # type-check + production build
 | `/spawn?project=1` | Spawn agent |
 | `/inbox` | Inbox |
 | `/new` | Found new base |
-| `/settings/:section` | Settings: `limits` `alerts` `docker` `teams` `roles` `keys` |
-| `/review/48` | Merge review |
+| `/settings/:section` | Settings: `limits` `alerts` `providers` `docker` `teams` `roles` `keys` |
+| `/review/:id` | Merge review (merge request id or PR number; mock: `/review/48`) |
 | `/quest/q-api` | Quest detail |
 | `/ambient` | Ambient wall mode (W) |
 | `/states` | Empty and error states |

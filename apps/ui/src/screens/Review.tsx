@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useStore } from '@/store/store'
+import { ReviewLive } from './ReviewLive'
 import { Segmented, inputCls } from '@/components/ui/controls'
 import { Button } from '@/components/ui/primitives'
 import { cx } from '@/lib/util'
@@ -31,8 +32,14 @@ const LINES: Line[] = [
   { n: 16, s: '+', t: '}' },
 ]
 
+/** /review/:id — a merge request id (live; prNumber also accepted) or a PR number (mock quests). */
 export function Review() {
-  const { pr } = useParams()
+  const { mode } = useStore()
+  return mode === 'live' ? <ReviewLive /> : <ReviewMock />
+}
+
+function ReviewMock() {
+  const { id: pr } = useParams()
   const { state, dispatch } = useStore()
   const quest = state.quests.find((q) => String(q.prNumber) === pr)
   const [file, setFile] = useState(1)

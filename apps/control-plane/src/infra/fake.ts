@@ -1,8 +1,11 @@
 // In-memory InfraDriver for server tests. Records every call, simulates projects, agent
 // containers, branches and merges, and can be told to fail or conflict.
 import { randomBytes } from 'node:crypto'
-import type {
-  AgentContainerSpec, BranchInfo, ContainerInfo, ContainerStats, InfraDriver, MergeResult,
+import { Duplex } from 'node:stream'
+import {
+  ContainerNotRunningError,
+  type AgentContainerSpec, type AgentExecResult, type BranchInfo, type ContainerInfo, type ContainerStats,
+  type InfraDriver, type MergeResult, type ShellHandle,
 } from './types'
 import { assertAgentId, assertBranch, assertMessage, assertSlug, names } from './validate'
 
@@ -34,6 +37,22 @@ export interface FakeAgent {
   volume: boolean
 }
 
+/** A fake interactive shell: echoes every input byte back as output. */
+export interface FakeShell {
+  agentId: string
+  cols: number
+  rows: number
+  resizes: [number, number][]
+  /** Everything written to the shell (terminal input). */
+  input: string
+  killed: boolean
+  handle: ShellHandle
+  /** Simulate the shell exiting on its own (ends the output stream). */
+  exit(): void
+}
+
+export type FakeExecHandler = (agentId: string, cmd: string[]) => AgentExecResult | Promise<AgentExecResult>
+
 export interface FakeDriverOptions {
   ping?: boolean
   stats?: Omit<ContainerStats, 'running' | 'memLimitMb'>
@@ -54,6 +73,10 @@ export interface FakeDriver extends InfraDriver {
   /** Next mergeToMain returns exactly this (one-shot). */
   nextMergeResult(r: MergeResult): void
   setPing(ok: boolean): void
+  /** Shells opened with openShell, in order. */
+  shells: FakeShell[]
+  /** Answers execInAgent (default: exit 0, empty output). */
+  execHandler: FakeExecHandler
   reset(): void
 }
 
@@ -69,6 +92,8 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
     projects: new Map(),
     agents: new Map(),
     volumes: new Set(),
+    shells: [],
+    execHandler: () => ({ exitCode: 0, stdout: '', stderr: '' }),
 
     callsTo(method) {
       return self.calls.filter((c) => c.method === method)
@@ -99,6 +124,7 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       self.projects.clear()
       self.agents.clear()
       self.volumes.clear()
+      self.shells.length = 0
       failures.clear()
       mergeOverride = null
       pingOk = opts.ping ?? true
@@ -220,6 +246,41 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       b.behindMain = 1
       for (const [n, other] of p.branches) if (n !== branch) other.behindMain += 1
       return { ok: true, sha: p.mainSha, message: `merged ${branch} into main` }
+    },
+    async execInAgent(agentId, cmd, o = {}) {
+      record('execInAgent', [agentId, cmd, o])
+      assertAgentId(agentId)
+      const a = self.agents.get(agentId)
+      if (!a?.running) throw new Error(`container for ${agentId} is not running`)
+      return self.execHandler(agentId, cmd)
+    },
+
+    async openShell(agentId, o) {
+      record('openShell', [agentId, o])
+      assertAgentId(agentId)
+      if (!self.agents.get(agentId)?.running) throw new ContainerNotRunningError(`agent container for ${agentId} is not running`)
+      const shell = {
+        agentId, cols: o.cols, rows: o.rows, resizes: [], input: '', killed: false,
+      } as unknown as FakeShell
+      const stream = new Duplex({
+        read() { /* pushed on write */ },
+        write(chunk: Buffer, _enc, cb) {
+          shell.input += chunk.toString('utf8')
+          this.push(chunk)
+          cb()
+        },
+      })
+      shell.exit = () => { stream.push(null) }
+      shell.handle = {
+        stream,
+        async resize(cols, rows) { shell.resizes.push([cols, rows]); shell.cols = cols; shell.rows = rows },
+        async kill() {
+          shell.killed = true
+          stream.destroy()
+        },
+      }
+      self.shells.push(shell)
+      return shell.handle
     },
   }
 

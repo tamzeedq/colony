@@ -1,6 +1,7 @@
 // One table drives every status surface: badges, map stations, roster cards, feed icons.
 // Class strings are written out in full so Tailwind can see them.
-import type { AgentStatus, ModelId, RoleId, QuestStatus, AlertSeverity } from '@/types/colony'
+import { BUILTIN_MODELS } from '@/types/colony'
+import type { AgentStatus, ModelId, ModelInfo, RoleId, QuestStatus, AlertSeverity } from '@/types/colony'
 
 export interface StatusStyle {
   glyph: string
@@ -29,12 +30,29 @@ export const MOTION_CLASS: Record<StatusStyle['motion'], string> = {
   none: '', breathe: 'animate-breathe', march: '', attention: 'animate-attention', shake: 'animate-shake', flash: 'animate-pop',
 }
 
-/** Models stay monochrome; tier is shown with pips so they never compete with status color. */
-export const MODELS: Record<ModelId, { name: string; short: string; pips: string; power: number; speed: number; costEff: number }> = {
-  'fable-5.1':  { name: 'Fable 5.1',  short: 'FAB',  pips: '◆◆◆◆', power: 5, speed: 2, costEff: 1 },
-  'opus-5.5':   { name: 'Opus 5.5',   short: 'OPUS', pips: '◆◆◆',  power: 5, speed: 2, costEff: 2 },
-  'sonnet-5.5': { name: 'Sonnet 5.5', short: 'SON',  pips: '◆◆',   power: 4, speed: 4, costEff: 4 },
-  'haiku-5.5':  { name: 'Haiku 5.5',  short: 'HAI',  pips: '◆',    power: 2, speed: 5, costEff: 5 },
+/**
+ * Models stay monochrome; tier is shown with pips so they never compete with status color.
+ * The registry is open (ModelId is a string): the built-in Claude models are always present,
+ * and the store replaces the registry with the snapshot's `models` when live.
+ */
+let registry: readonly ModelInfo[] = BUILTIN_MODELS
+
+export function setModelRegistry(models: readonly ModelInfo[] | undefined) {
+  if (!models?.length) { registry = BUILTIN_MODELS; return }
+  // Built-ins first (design order), then any added models.
+  const extra = models.filter((m) => !BUILTIN_MODELS.some((b) => b.id === m.id))
+  registry = [...BUILTIN_MODELS.map((b) => models.find((m) => m.id === b.id) ?? b), ...extra]
+}
+
+/** Every model the registry knows, built-ins first. */
+export const modelList = (): readonly ModelInfo[] => registry
+
+/** Look up a model; unknown ids get a neutral fallback so nothing crashes on new models. */
+export function modelInfo(id: ModelId): ModelInfo {
+  const m = registry.find((x) => x.id === id) ?? BUILTIN_MODELS.find((x) => x.id === id)
+  if (m) return m
+  const short = id.replace(/[^a-z0-9]/gi, '').slice(0, 4).toUpperCase() || '?'
+  return { id, provider: 'custom', name: id, short, pips: '◆', power: 3, speed: 3, costEff: 3, cliModel: id, experimental: true }
 }
 
 /** Classes get a code + texture, never a hue. */

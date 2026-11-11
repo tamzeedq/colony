@@ -1,6 +1,8 @@
 // WebSockets on Fastify's HTTP server via 'upgrade':
 //   /api/stream  UI fan-out: snapshot on connect, then UiStreamMessages. Local Origin only.
 //   /api/runner  agent runners: Authorization: Bearer <agent token>. RunnerMessages in, RunnerCommands out.
+//   /api/agents/:id/terminal  interactive shell in the agent's container (./terminal.ts).
+//                Admin token + local Origin, checked before the upgrade.
 
 import type { IncomingMessage, Server } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -10,16 +12,19 @@ import { sha256, type AgentManager, type RunnerConn } from './agents'
 import type { Config } from './config'
 import { checkAdmin, isLocalOrigin } from './http'
 import type { Store } from './store'
+import { toSize, type TerminalHub } from './terminal'
 
 export interface WsDeps {
   config: Config
   store: Store
   agents: AgentManager
+  terminals?: TerminalHub
   log?: { info: (m: string) => void; warn: (m: string) => void }
 }
 
 const HEARTBEAT_MS = 30_000
 const MAX_RUNNER_FRAME = 4 * 1024 * 1024
+const TERMINAL_PATH = /^\/api\/agents\/([^/]+)\/terminal$/
 
 function reject(socket: Duplex, status: number, text: string) {
   try {
@@ -32,6 +37,11 @@ function reject(socket: Duplex, status: number, text: string) {
 export function attachWebSockets(server: Server, d: WsDeps) {
   const log = d.log ?? { info: (m: string) => console.log(`[ws] ${m}`), warn: (m: string) => console.warn(`[ws] ${m}`) }
   const ui = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 })
+  // Terminal sockets join the heartbeat so half-open browser connections get cleaned up.
+  d.terminals?.wss.on('connection', (ws: WebSocket) => {
+    alive.set(ws, true)
+    ws.on('pong', () => alive.set(ws, true))
+  })
   const runner = new WebSocketServer({ noServer: true, maxPayload: MAX_RUNNER_FRAME })
   const alive = new WeakMap<WebSocket, boolean>()
 
@@ -53,6 +63,19 @@ export function attachWebSockets(server: Server, d: WsDeps) {
       if (!rec) return reject(socket, 401, 'Unauthorized')
       const agentId = rec.agent.id
       runner.handleUpgrade(req, socket, head, (ws) => runner.emit('connection', ws, req, agentId))
+      return
+    }
+
+    const term = TERMINAL_PATH.exec(url.pathname)
+    if (term && d.terminals) {
+      if (!isLocalOrigin(req.headers.origin)) return reject(socket, 403, 'Forbidden')
+      if (!checkAdmin(d.config, req.headers, url.searchParams.get('token') ?? undefined)) return reject(socket, 401, 'Unauthorized')
+      let agentId: string
+      try { agentId = decodeURIComponent(term[1]) } catch { return reject(socket, 400, 'Bad Request') }
+      if (!d.store.agents.has(agentId)) return reject(socket, 404, 'Not Found')
+      const cols = toSize(url.searchParams.get('cols')) ?? 80
+      const rows = toSize(url.searchParams.get('rows')) ?? 24
+      d.terminals.handleUpgrade(req, socket, head, agentId, { cols, rows })
       return
     }
 
@@ -102,7 +125,7 @@ export function attachWebSockets(server: Server, d: WsDeps) {
   })
 
   const heartbeat = setInterval(() => {
-    for (const wss of [ui, runner]) {
+    for (const wss of [ui, runner, ...(d.terminals ? [d.terminals.wss] : [])]) {
       for (const ws of wss.clients) {
         if (alive.get(ws) === false) { ws.terminate(); continue }
         alive.set(ws, false)

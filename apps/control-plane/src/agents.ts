@@ -277,7 +277,7 @@ export class AgentManager {
         if (msg.sessionId && msg.sessionId !== rec.sessionId) { rec.sessionId = msg.sessionId; this.store.saveAgent(rec) }
         return
       case 'plan_usage':
-        this.store.setPlanUsage(this.withRate(msg.usage))
+        this.store.setPlanUsage(this.withRate(msg.usage), agentId)
         this.hooks.afterPlanUsage?.()
         return
       case 'workspace':
@@ -324,11 +324,22 @@ export class AgentManager {
 
   // ── commander commands ──────────────────────────────────────────────────────
 
-  message(agentId: string, text: string) {
+  /** Send a user_message to the runner, or queue it until the runner says hello. */
+  deliver(agentId: string, text: string) {
     const rec = this.get(agentId)
     if (!this.send(agentId, { type: 'user_message', text })) {
       this.store.patchAgent(agentId, {}, { pending: [...rec.internal.pending, text] })
     }
+  }
+
+  /** Record a commander action in the agent's feed (kind 'status', the feed's "you" style). */
+  private youEvent(rec: AgentRecord, text: string, extra: Partial<ActivityEvent> = {}) {
+    this.store.addEvent({ id: newId('ev'), at: nowIso(), agentId: rec.agent.id, projectId: rec.agent.projectId, kind: 'status', text, ...extra })
+  }
+
+  message(agentId: string, text: string) {
+    const rec = this.get(agentId)
+    this.deliver(agentId, text)
     this.store.addEvent({
       id: newId('ev'), at: nowIso(), agentId, projectId: rec.agent.projectId, kind: 'message',
       text: `You → ${rec.agent.callsign}: ${text}`, message: { to: agentId, body: text },
@@ -348,6 +359,74 @@ export class AgentManager {
     const sent = this.send(agentId, { type: 'resume' })
     this.store.patchAgent(agentId, { status: sent ? 'idle' : rec.agent.status === 'paused' ? 'booting' : rec.agent.status, currentAction: '' }, { desired: 'run', pausedBy: undefined })
     return this.store.toAgent(rec)
+  }
+
+  /** Pause every live agent that is not already paused. */
+  pauseAll() {
+    const paused: string[] = []
+    for (const rec of [...this.store.agents.values()]) {
+      const a = rec.agent
+      if (a.status === 'error' || a.status === 'done' || rec.internal.desired === 'paused') continue
+      this.pause(a.id, 'you')
+      paused.push(a.id)
+    }
+    return { paused }
+  }
+
+  /** The commander takes the wheel: pause the runner and mark the agent as controlled by you. */
+  takeControl(agentId: string) {
+    const rec = this.get(agentId)
+    if (rec.agent.controller === 'you') return this.store.toAgent(rec)
+    this.pause(agentId, 'you')
+    this.store.patchAgent(agentId, { controller: 'you', currentAction: 'You have control' })
+    this.youEvent(rec, 'You took control', { status: 'paused' })
+    return this.store.toAgent(this.get(agentId))
+  }
+
+  /** Give control back: resume the agent and tell it what the commander changed. */
+  async handBack(agentId: string, note?: string) {
+    const rec = this.get(agentId)
+    if (rec.agent.controller !== 'you') throw conflict('you do not have control of this agent')
+    const changes = await this.workspaceChanges(agentId)
+    const lines = [
+      'The commander took control of your workspace and has now handed it back to you.',
+      '',
+      'What changed in /workspace while they had control (`git diff --stat HEAD`):',
+      changes.diffStat || '(no changes to tracked files)',
+      '',
+      '`git status --short`:',
+      changes.status || '(clean)',
+    ]
+    if (changes.error) lines.push('', `(Could not read all workspace changes: ${changes.error})`)
+    if (note?.trim()) lines.push('', `Their note: ${note.trim()}`)
+    lines.push('', 'Review these changes before you continue. They are the commander\'s work: keep them unless the note says otherwise.')
+    const text = lines.join('\n')
+    this.store.patchAgent(agentId, { controller: 'agent' })
+    this.resume(agentId)
+    this.deliver(agentId, text)
+    this.youEvent(rec, 'You handed control back', { message: { to: agentId, body: text } })
+    return { agent: this.store.toAgent(this.get(agentId)), message: text }
+  }
+
+  private async workspaceChanges(agentId: string): Promise<{ diffStat: string; status: string; error?: string }> {
+    const run = this.infra.execInAgent?.bind(this.infra)
+    if (!run) return { diffStat: '', status: '', error: 'the infrastructure driver cannot run commands in agent containers' }
+    const errors: string[] = []
+    const one = async (cmd: string[]) => {
+      try {
+        const r = await run(agentId, cmd, { timeoutMs: 20_000 })
+        if (r.exitCode !== 0) errors.push(`${cmd.slice(3).join(' ')} exited ${r.exitCode}: ${clip(r.stderr.trim() || r.stdout.trim(), 200)}`)
+        return clip(r.stdout.replace(/\s+$/, ''), 4000)
+      } catch (e) {
+        errors.push(`${cmd.slice(3).join(' ')}: ${clip((e as Error).message, 200)}`)
+        return ''
+      }
+    }
+    const [diffStat, status] = await Promise.all([
+      one(['git', '-C', '/workspace', 'diff', '--stat', 'HEAD']),
+      one(['git', '-C', '/workspace', 'status', '--short']),
+    ])
+    return { diffStat, status, ...(errors.length ? { error: errors.join('; ') } : {}) }
   }
 
   interrupt(agentId: string) {
@@ -414,6 +493,8 @@ export class AgentManager {
     this.conns.clear()
   }
 }
+
+const clip = (t: string, n: number) => (t.length > n ? t.slice(0, n) + '\n…' : t)
 
 function actionFor(ev: ActivityEvent): string | undefined {
   switch (ev.kind) {

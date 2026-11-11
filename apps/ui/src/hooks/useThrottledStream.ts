@@ -38,6 +38,9 @@ export function useThrottledStream(subscribe: (onEvent: (e: ActivityEvent) => vo
       setItems((prev) => {
         const next = [...prev]
         for (const e of incoming) {
+          // Upsert rule (packages/shared events.ts): a repeated id replaces the earlier event.
+          const seen = next.findIndex((x) => x.id === e.id)
+          if (seen >= 0) { next[seen] = { ...e, groupCount: next[seen].groupCount }; continue }
           const last = next[next.length - 1]
           const groupable = e.kind === 'tool' || e.kind === 'edit'
           if (groupable && last && last.kind === e.kind && last.agentId === e.agentId &&
@@ -55,5 +58,16 @@ export function useThrottledStream(subscribe: (onEvent: (e: ActivityEvent) => vo
 
   const hold = useCallback(() => setHeld(true), [])
   const release = useCallback(() => setHeld(false), [])
-  return { items, pending, held, hold, release }
+  /** Merge a fetched backlog (e.g. GET /api/agents/:id/events): upsert by id, keep time order. */
+  const merge = useCallback((events: ActivityEvent[]) => {
+    const f = filterRef.current
+    const add = f ? events.filter(f) : events
+    if (!add.length) return
+    setItems((prev) => {
+      const byId = new Map<string, FeedItem>(add.map((e) => [e.id, e]))
+      for (const p of prev) byId.set(p.id, p) // live (newer) copies win
+      return [...byId.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).slice(-max)
+    })
+  }, [max])
+  return { items, pending, held, hold, release, merge }
 }

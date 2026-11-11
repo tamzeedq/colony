@@ -1,5 +1,6 @@
 // Seed data matching the design canvas. Replace with your API.
-import type { Agent, Alert, ActivityEvent, Guards, Project, Quest, Resources, RoleId, ModelId, AgentStatus } from '@/types/colony'
+import type { Agent, Alert, ActivityEvent, Guards, MergeRequest, Project, ProviderView, Quest, Resources, RoleId, ModelId, AgentStatus } from '@/types/colony'
+import { BUILTIN_MODEL_IDS } from '@/types/colony'
 
 const now = Date.now()
 const iso = (offsetSec: number) => new Date(now + offsetSec * 1000).toISOString()
@@ -40,7 +41,7 @@ const ROLE_PROMPT: Record<RoleId, string> = {
 function A(id: string, projectId: string, role: RoleId, model: ModelId, status: AgentStatus, extra: Partial<Agent>): Agent {
   const [name, num] = id.split('-')
   return {
-    id, projectId, callsign: name[0].toUpperCase() + name.slice(1) + '-' + num, role, model, status, controller: 'agent',
+    id, projectId, callsign: name[0].toUpperCase() + name.slice(1) + '-' + num, role, provider: 'claude-subscription', model, status, controller: 'agent',
     container: { name: `${projectId.slice(2)}-${id}`, cpuPct: 10, memMb: 900, memLimitMb: 4096, health: 'ok' },
     contextPct: 30, tokensToday: 200_000, spendTodayUsd: 1, budgetCapUsd: 10, sessionShare: 0.02, uptimeSec: 5400,
     level: 3, xp: 40, questsDone: 8, rolePrompt: ROLE_PROMPT[role], allowedTools: ['read', 'edit', 'bash'],
@@ -136,6 +137,19 @@ export const resources: Resources = {
 }
 
 export const guards: Guards = { warnAtPct: 70, pauseWorkersAtPct: 90, orchestratorReservePct: 5, weeklyWarnAtPct: 70, paceForecast: true, autoDownshiftAtPct: 85, resumeAfterReset: false }
+
+export const mergeRequests: MergeRequest[] = [
+  { id: 'mr-48', projectId: 'p-readable', branch: 'feat/reading-streaks', prNumber: 48, requestedBy: 'kip-03', status: 'pending' },
+]
+
+export const providers: ProviderView[] = [
+  { id: 'claude-subscription', label: 'Claude subscription', kind: 'subscription', hasKey: true, models: [...BUILTIN_MODEL_IDS], status: 'connected' },
+  { id: 'anthropic-api', label: 'Anthropic API', kind: 'anthropic', hasKey: true, keyHint: 'sk-…9f2c', models: [...BUILTIN_MODEL_IDS], status: 'untested' },
+  { id: 'openai', label: 'OpenAI', kind: 'gateway', hasKey: false, models: [], status: 'missing_key' },
+  { id: 'google', label: 'Google', kind: 'gateway', hasKey: false, models: [], status: 'missing_key' },
+  { id: 'openrouter', label: 'OpenRouter', kind: 'gateway', hasKey: false, models: [], status: 'missing_key' },
+  { id: 'custom', label: 'Custom (OpenAI-compatible)', kind: 'gateway', hasKey: false, models: [], status: 'missing_key' },
+]
 
 /** Lines the simulation picks from to make the colony feel alive. */
 export const SIM_LINES: Record<string, { kind: ActivityEvent['kind']; text: string }[]> = {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Alert, AlertKind } from '@/types/colony'
 import { ALERT_SEVERITY } from '@/design/status'
-import { useStore } from '@/store/store'
+import { useStore, mergeRequestForAlert } from '@/store/store'
 import { ago, cx } from '@/lib/util'
 
 export const KIND: Record<AlertKind, { g: string; label: string; color: string; bar: string }> = {
@@ -17,11 +17,12 @@ export const KIND: Record<AlertKind, { g: string; label: string; color: string; 
 
 /** One place that turns alert buttons into actions. */
 export function useAlertAction() {
-  const { state, dispatch } = useStore()
+  const { state, dispatch, mode } = useStore()
   const nav = useNavigate()
   return (alert: Alert, actionId: string) => {
     const agent = state.agents.find((a) => a.id === alert.agentId)
     const done = () => dispatch({ type: 'resolveAlert', id: alert.id })
+    if (mode === 'live') return liveAlertAction(alert, actionId)
     if (actionId.startsWith('reply:')) { if (agent) dispatch({ type: 'agentStatus', id: agent.id, status: 'editing', action: `Using: ${actionId.slice(6)}` }); return done() }
     switch (actionId) {
       case 'restart-6gb': if (agent) dispatch({ type: 'restart', id: agent.id, memMb: 6144 }); return done()
@@ -37,6 +38,45 @@ export function useAlertAction() {
       case 'pause-noncritical': dispatch({ type: 'pause', ids: state.agents.filter((a) => a.role === 'researcher' || a.role === 'qa').map((a) => a.id) }); return done()
       case 'inspect': if (agent) dispatch({ type: 'inspect', id: agent.id }); return
       default: return done()
+    }
+  }
+
+  // Live: buttons that map to a real action call it (and resolve once it went through);
+  // anything else just resolves the alert.
+  async function liveAlertAction(alert: Alert, actionId: string) {
+    const agent = state.agents.find((a) => a.id === alert.agentId)
+    const project = state.projects.find((p) => p.id === alert.projectId)
+    const resolve = () => dispatch({ type: 'resolveAlert', id: alert.id })
+    const thenResolve = async (ok: Promise<boolean>) => { if (await ok) await resolve() }
+    if (actionId.startsWith('reply:')) {
+      if (agent) return thenResolve(dispatch({ type: 'message', id: agent.id, text: actionId.slice(6) }))
+      return resolve()
+    }
+    switch (actionId) {
+      case 'approve': {
+        const mr = mergeRequestForAlert(state, alert)
+        if (!mr) { nav('/inbox'); return }
+        return thenResolve(dispatch({ type: 'approveMerge', id: mr.id }))
+      }
+      case 'review': { const mr = mergeRequestForAlert(state, alert); nav(mr ? `/review/${mr.id}` : '/inbox'); return }
+      case 'restart-6gb': case 'restart': return agent ? thenResolve(dispatch({ type: 'restart', id: agent.id })) : resolve()
+      case 'resume': return agent ? thenResolve(dispatch({ type: 'resume', ids: [agent.id] })) : resolve()
+      case 'take-control':
+        if (!agent) return resolve()
+        dispatch({ type: 'inspect', id: agent.id })
+        return thenResolve(dispatch({ type: 'takeControl', id: agent.id }))
+      case 'nudge': case 'inspect': case 'open-inspector': if (agent) dispatch({ type: 'inspect', id: agent.id }); return
+      case 'reassign': nav('/roster'); return resolve()
+      case 'raise-cap': {
+        if (!project) return resolve()
+        const fromLabel = Number(/\$(\d+(?:\.\d+)?)/.exec(alert.actions.find((a) => a.id === actionId)?.label ?? '')?.[1])
+        const cap = fromLabel > 0 ? fromLabel : Math.ceil(project.dailyCapUsd * 1.25)
+        return thenResolve(dispatch({ type: 'cap', projectId: project.id, cap }))
+      }
+      case 'pause-base': return thenResolve(dispatch({ type: 'pause', ids: state.agents.filter((a) => a.projectId === alert.projectId && a.status !== 'paused').map((a) => a.id) }))
+      case 'downshift': return thenResolve(dispatch({ type: 'downshift' }))
+      case 'pause-noncritical': return thenResolve(dispatch({ type: 'pause', ids: state.agents.filter((a) => (a.role === 'researcher' || a.role === 'qa') && a.status !== 'paused').map((a) => a.id) }))
+      default: return resolve()
     }
   }
 }

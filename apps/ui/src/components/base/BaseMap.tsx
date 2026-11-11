@@ -1,7 +1,7 @@
 // The base view. Stations are HTML (crisp, clickable, accessible). The link lines here are
 // CSS; swap them for a PixiJS layer when you want pulses, camera pan and zoom.
 import type { Agent, Project } from '@/types/colony'
-import { STATUS, ROLES, MODELS } from '@/design/status'
+import { STATUS, ROLES, modelInfo } from '@/design/status'
 import { useStore, projectAgents } from '@/store/store'
 import { Bar } from '@/components/ui/controls'
 import { cx } from '@/lib/util'
@@ -53,7 +53,7 @@ function HqCard({ agent, x, y, questCount }: { agent: Agent; x: number; y: numbe
       <div className="flex items-center gap-2.5">
         <span className="grid h-[34px] w-[34px] place-items-center bg-st-think font-display text-[10px] font-bold text-ground [clip-path:polygon(25%_0,75%_0,100%_50%,75%_100%,25%_100%,0_50%)]">ORC</span>
         <div className="min-w-0 flex-1"><div className="whitespace-nowrap font-display text-[17px] font-bold leading-none">{agent.callsign}</div><div className="mt-1 text-[11px] text-ink-muted">Orchestrator · HQ</div></div>
-        <span className="whitespace-nowrap rounded-xs border border-line-strong px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">{MODELS[agent.model].short} {MODELS[agent.model].pips}</span>
+        <span className="whitespace-nowrap rounded-xs border border-line-strong px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">{modelInfo(agent.model).short} {modelInfo(agent.model).pips}</span>
       </div>
       <div className="mt-2.5 flex items-center gap-2">
         <span className={cx('inline-flex items-center gap-1 rounded-full border px-2 text-xs font-semibold', s.badge)}>{s.glyph} {s.label}</span>
@@ -74,7 +74,7 @@ export function StationCard({ agent, x, y, onOpen, selected }: { agent: Agent; x
       <div className="flex items-center gap-2">
         <span className="grid h-[26px] w-[26px] place-items-center rounded-sm border border-line-strong bg-raised font-display text-[9px] font-bold text-ink-soft" style={{ backgroundImage: ROLES[agent.role].texture }}>{ROLES[agent.role].code}</span>
         <span className="flex-1 font-display text-[15px] font-semibold">{agent.callsign}</span>
-        <span className="font-mono text-[10px] text-ink-muted">{MODELS[agent.model].short} {MODELS[agent.model].pips}</span>
+        <span className="font-mono text-[10px] text-ink-muted">{modelInfo(agent.model).short} {modelInfo(agent.model).pips}</span>
       </div>
       <div className={cx('my-2 inline-flex items-center gap-1.5 rounded-full border px-2 text-xs font-semibold', s.badge)}>{s.glyph} {s.label}</div>
       <div className="truncate font-mono text-[11px] text-ink-soft">{agent.currentAction ?? '—'}</div>

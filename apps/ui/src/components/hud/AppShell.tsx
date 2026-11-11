@@ -3,6 +3,7 @@ import { useStore, needsYou } from '@/store/store'
 import { Meter } from '@/components/ui/primitives'
 import { Inspector } from '@/components/agent/Inspector'
 import { ToastStack, CriticalBanner } from '@/components/alerts/Toasts'
+import { ReconnectingBanner } from '@/components/states/Connection'
 import { ShortcutOverlay, CommandPalette } from '@/components/states/Overlays'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useMediaQuery, ULTRAWIDE } from '@/hooks/useMediaQuery'
@@ -37,16 +38,21 @@ export function ResourceHud() {
   const g = state.guards
   return (
     <>
-      <Meter label="Session limit" pct={r.usage.session.usedPct} value={`${Math.round(r.usage.session.usedPct)}%`} sub={`resets ${untilLabel(r.usage.session.resetsAt)}`} warn={g.warnAtPct} critical={g.pauseWorkersAtPct} />
-      <Meter label="Weekly limit" pct={r.usage.weekly.usedPct} value={`${Math.round(r.usage.weekly.usedPct)}%`} sub="resets Thu" warn={g.weeklyWarnAtPct} />
-      <Meter label="Spend today" pct={(r.spendTodayUsd / r.dailyCapUsd) * 100} value={usd(r.spendTodayUsd)} sub={`/ ${usd(r.dailyCapUsd).replace('.00', '')}`} neutral />
+      {/* Plan limits only when the plan usage is readable; otherwise spend meters carry the HUD. */}
+      {r.usage.source !== 'unavailable' && <>
+        <Meter label="Session limit" pct={r.usage.session.usedPct} value={`${Math.round(r.usage.session.usedPct)}%`} sub={`resets ${untilLabel(r.usage.session.resetsAt)}`} warn={g.warnAtPct} critical={g.pauseWorkersAtPct} />
+        <Meter label="Weekly limit" pct={r.usage.weekly.usedPct} value={`${Math.round(r.usage.weekly.usedPct)}%`} sub={`resets ${weekday(r.usage.weekly.resetsAt)}`} warn={g.weeklyWarnAtPct} />
+      </>}
+      <Meter label="Spend today" pct={r.dailyCapUsd ? (r.spendTodayUsd / r.dailyCapUsd) * 100 : 0} value={usd(r.spendTodayUsd)} sub={`/ ${usd(r.dailyCapUsd).replace('.00', '')}`} neutral />
       <span className="hidden 2xl:contents">
-        <Meter label="Containers" pct={(r.containers.running / r.containers.max) * 100} value={r.containers.running} sub={`/ ${r.containers.max}`} neutral />
-        <Meter label="Host" pct={r.host.cpuPct} value={`${r.host.cpuPct}%`} sub={`CPU · ${Math.round((r.host.memUsedGb / r.host.memTotalGb) * 100)}% RAM`} neutral />
+        <Meter label="Containers" pct={r.containers.max ? (r.containers.running / r.containers.max) * 100 : 0} value={r.containers.running} sub={`/ ${r.containers.max}`} neutral />
+        <Meter label="Host" pct={r.host.cpuPct} value={`${Math.round(r.host.cpuPct)}%`} sub={`CPU · ${r.host.memTotalGb ? Math.round((r.host.memUsedGb / r.host.memTotalGb) * 100) : 0}% RAM`} neutral />
       </span>
     </>
   )
 }
+
+const weekday = (iso: string) => new Date(iso).toLocaleDateString('en-US', { weekday: 'short' })
 
 const NAV = [
   { to: '/', label: 'World', end: true }, { to: '/base/1', label: 'Bases' }, { to: '/roster', label: 'Roster' },
@@ -64,7 +70,7 @@ export function AppShell() {
         <Logo />
         <nav aria-label="Primary" className="flex flex-wrap gap-0.5">
           {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end}
+            <NavLink key={n.to} to={n.label === 'Bases' && state.projects.length ? `/base/${state.projects[0].key}` : n.to} end={n.end}
               className={({ isActive }) => cx('rounded-sm px-3 py-1.5 text-[13px] no-underline',
                 isActive || (n.label === 'Bases' && location.pathname.startsWith('/base')) ? 'bg-ink font-semibold text-ground' : 'font-medium text-ink-muted hover:text-ink')}>
               {n.label}{n.label === 'Inbox' && needsYou(state).length ? ` · ${needsYou(state).length}` : ''}
@@ -78,6 +84,7 @@ export function AppShell() {
         <button type="button" aria-label="Keyboard shortcuts" onClick={() => dispatch({ type: 'overlay', overlay: 'shortcuts' })}
           className="h-8 w-8 rounded-md border border-line font-mono text-[13px] text-ink-muted">?</button>
       </header>
+      <ReconnectingBanner />
       <CriticalBanner />
       <div className={cx('flex-1', docked && 'pr-[820px]')}>
         <Outlet />

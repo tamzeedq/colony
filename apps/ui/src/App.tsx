@@ -11,11 +11,16 @@ import { Review } from '@/screens/Review'
 import { Quest } from '@/screens/Quest'
 import { Ambient } from '@/screens/Ambient'
 import { EmptyWorld, DockerDown } from '@/components/states/EmptyStates'
+import { PairScreen, ConnectingScreen } from '@/components/states/Connection'
+import { useStore } from '@/store/store'
 
 // Remount the base screen per project so its local form state resets.
 function BaseRoute() { const { key } = useParams(); return <Base key={key} /> }
 
 export default function App() {
+  const { mode, conn } = useStore()
+  if (mode === 'live' && !conn.token) return <PairScreen />
+  if (mode === 'live' && !conn.hydrated) return <ConnectingScreen />
   return (
     <Routes>
       <Route path="/ambient" element={<Ambient />} />
@@ -28,7 +33,7 @@ export default function App() {
         <Route path="new" element={<NewProject />} />
         <Route path="settings" element={<Navigate to="/settings/limits" replace />} />
         <Route path="settings/:section" element={<Settings />} />
-        <Route path="review/:pr" element={<Review />} />
+        <Route path="review/:id" element={<Review />} />
         <Route path="quest/:id" element={<Quest />} />
         <Route path="states" element={<div className="grid grid-cols-2"><EmptyWorld /><DockerDown /></div>} />
         <Route path="*" element={<Navigate to="/" replace />} />

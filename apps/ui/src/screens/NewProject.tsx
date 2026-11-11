@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import type { Agent, Project, RoleId } from '@/types/colony'
 import { ROLES } from '@/design/status'
 import { useStore } from '@/store/store'
+import { endpoints } from '@/api/endpoints'
+import { errorMessage } from '@/api/client'
 import { Switch, Field, inputCls, Segmented } from '@/components/ui/controls'
 import { KeyHint } from '@/components/ui/primitives'
 import { cx } from '@/lib/util'
@@ -18,25 +20,64 @@ const STEPS = [
   ['Workers spawn and claim quests', 'Frontend + Backend on Sonnet 5.5'],
 ]
 
+const teamModel = (r: RoleId) => (r === 'orchestrator' ? 'opus-5.5' : r === 'qa' ? 'haiku-5.5' : 'sonnet-5.5')
+
 export function NewProject() {
-  const { state, dispatch } = useStore()
+  const { state, dispatch, mode } = useStore()
+  const live = mode === 'live'
   const nav = useNavigate()
-  const [name, setName] = useState('Pantrybook')
+  // Mock mode keeps the design's example; live starts blank.
+  const [name, setName] = useState(live ? '' : 'Pantrybook')
   const [repoMode, setRepoMode] = useState<'github' | 'empty'>('github')
-  const [repo, setRepo] = useState('https://github.com/you/pantrybook')
-  const [stack, setStack] = useState(['Next.js', 'TypeScript', 'Prisma', 'Tailwind', 'Supabase'])
-  const [goal, setGoal] = useState("Meal planner that turns what's in my pantry into a week of dinners. First milestone: pantry inventory with barcode scan, and a \"cook tonight\" suggestion.")
-  const [supa, setSupa] = useState(true)
+  const [repo, setRepo] = useState(live ? '' : 'https://github.com/you/pantrybook')
+  const [stack, setStack] = useState(live ? [] as string[] : ['Next.js', 'TypeScript', 'Prisma', 'Tailwind', 'Supabase'])
+  const [goal, setGoal] = useState(live ? '' : "Meal planner that turns what's in my pantry into a week of dinners. First milestone: pantry inventory with barcode scan, and a \"cook tonight\" suggestion.")
+  const [supa, setSupa] = useState(!live)
   const [team, setTeam] = useState('trio')
-  const key = Math.max(0, ...state.projects.map((p) => p.key)) + 1
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const key = live
+    ? ([1, 2, 3, 4, 5, 6, 7, 8, 9].find((k) => !state.projects.some((p) => p.key === k)) ?? 0)
+    : Math.max(0, ...state.projects.map((p) => p.key)) + 1
+
+  // Live: create the project, then spawn the chosen team; agents arrive over the stream.
+  const foundLive = async () => {
+    if (!name.trim()) { setError('Give the base a name'); return }
+    setError('')
+    const roles = TEAMS.find((t) => t.id === team)!.roles
+    let project: Project
+    try {
+      setBusy('Creating base…')
+      project = await endpoints.createProject({
+        name: name.trim(), goal: goal.trim() || undefined, stack,
+        repoUrl: repoMode === 'github' && repo.trim() ? repo.trim() : undefined, dailyCapUsd: 15,
+      })
+      dispatch({ type: 'upsertProject', project })
+    } catch (e) {
+      setError(errorMessage(e)); setBusy(''); return
+    }
+    const failed: string[] = []
+    for (const [i, r] of roles.entries()) {
+      setBusy(`Spawning ${ROLES[r].name} (${i + 1}/${roles.length})…`)
+      try {
+        const agent = await endpoints.spawn(project.id, { role: r, model: teamModel(r) })
+        if (agent?.id) dispatch({ type: 'upsertAgent', agent })
+      } catch (e) {
+        failed.push(`${ROLES[r].name}: ${errorMessage(e)}`)
+      }
+    }
+    if (failed.length) dispatch({ type: 'toast', toast: { id: `found-${project.id}`, title: `${project.name} founded, but ${failed.length} agent${failed.length > 1 ? 's' : ''} didn’t spawn · ${failed[0]}`, tone: 'error', at: Date.now() } })
+    nav(project.key ? `/base/${project.key}` : '/')
+  }
 
   const found = () => {
+    if (live) { void foundLive(); return }
     const id = `p-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
     const roles = TEAMS.find((t) => t.id === team)!.roles
     const names = ['Hale', 'Moss', 'Kit', 'Arlo', 'Vale']
     const agents: Agent[] = roles.map((r, i) => {
       const aid = `${names[i].toLowerCase()}-${30 + i}`
-      return { id: aid, projectId: id, callsign: `${names[i]}-${30 + i}`, role: r, model: r === 'orchestrator' ? 'opus-5.5' : r === 'qa' ? 'haiku-5.5' : 'sonnet-5.5',
+      return { id: aid, projectId: id, callsign: `${names[i]}-${30 + i}`, role: r, provider: 'claude-subscription', model: teamModel(r),
         status: 'booting', controller: 'agent', currentAction: 'Booting container…',
         container: { name: `${id.slice(2)}-${aid}`, cpuPct: 4, memMb: 200, memLimitMb: 4096, health: 'ok' },
         contextPct: 0, tokensToday: 0, spendTodayUsd: 0, budgetCapUsd: 8, sessionShare: 0, uptimeSec: 0, level: 1, xp: 0, questsDone: 0, rolePrompt: '', allowedTools: ['read', 'edit', 'bash'] }
@@ -57,13 +98,15 @@ export function NewProject() {
       </header>
       <div className="flex flex-wrap">
         <form className="flex min-w-0 max-w-[760px] flex-[1_1_560px] flex-col gap-5 px-8 py-6" onSubmit={(e) => { e.preventDefault(); found() }}>
-          <Field label="Base name"><input value={name} onChange={(e) => setName(e.target.value)} className={cx(inputCls, 'font-display text-2xl font-semibold')} /></Field>
+          <Field label="Base name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name your base" className={cx(inputCls, 'font-display text-2xl font-semibold')} /></Field>
           <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
             <legend className="mb-1.5 text-xs text-ink-muted">Repository</legend>
             <Segmented label="Repository source" value={repoMode} onChange={setRepoMode} options={[{ id: 'github', label: 'Connect GitHub repo' }, { id: 'empty', label: 'Start empty repo' }]} />
             {repoMode === 'github' && <>
-              <input type="url" value={repo} onChange={(e) => setRepo(e.target.value)} aria-label="GitHub URL" className={cx(inputCls, 'font-mono text-[13px]')} />
-              <span className="text-xs text-st-done">✓ Found · default branch main · detected Next.js + Prisma</span>
+              <input type="url" value={repo} onChange={(e) => setRepo(e.target.value)} aria-label="GitHub URL" placeholder="https://github.com/you/repo" className={cx(inputCls, 'font-mono text-[13px]')} />
+              {live
+                ? <span className="text-xs text-ink-dim">Public https URL. Colony clones it into a base volume when you found the base.</span>
+                : <span className="text-xs text-st-done">✓ Found · default branch main · detected Next.js + Prisma</span>}
             </>}
           </fieldset>
           <fieldset className="m-0 border-0 p-0">
@@ -75,10 +118,10 @@ export function NewProject() {
               ))}
             </div>
           </fieldset>
-          <Field label="Goal brief for the Orchestrator"><textarea rows={4} value={goal} onChange={(e) => setGoal(e.target.value)} className={inputCls} /></Field>
+          <Field label="Goal brief for the Orchestrator"><textarea rows={4} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="What should this base build first?" className={inputCls} /></Field>
           <div className="flex items-center gap-3.5 rounded-lg border border-line bg-surface p-3.5">
             <Switch on={supa} onChange={setSupa} label="Provision dev Supabase" />
-            <div><b className="text-sm">Provision a dev Supabase</b><div className="text-xs text-ink-muted">Local stack in Docker · Postgres, Auth, Storage</div></div>
+            <div><b className="text-sm">Provision a dev Supabase</b><div className="text-xs text-ink-muted">Local stack in Docker · Postgres, Auth, Storage{live ? ' · not wired yet (later phase)' : ''}</div></div>
           </div>
           <fieldset className="m-0 border-0 p-0">
             <legend className="mb-2 text-xs text-ink-muted">Starting team</legend>
@@ -94,9 +137,11 @@ export function NewProject() {
             </div>
           </fieldset>
           <div className="flex items-center justify-end gap-2.5">
-            <span className="mr-auto text-xs text-ink-dim">Daily cap for this base: <b className="text-ink">$15.00</b> · edit later</span>
+            {error
+              ? <span role="alert" className="mr-auto text-xs text-st-error">✕ {error}</span>
+              : <span className="mr-auto text-xs text-ink-dim">{busy || <>Daily cap for this base: <b className="text-ink">$15.00</b> · edit later</>}</span>}
             <Link to="/" className="px-3.5 py-2.5 text-[13px] text-ink-muted no-underline">Cancel</Link>
-            <button type="submit" className="rounded-lg bg-you px-5.5 py-3 text-[15px] font-bold text-you-ink">⬢ Found {name || 'base'}</button>
+            <button type="submit" disabled={!!busy} className="rounded-lg bg-you px-5.5 py-3 text-[15px] font-bold text-you-ink disabled:opacity-60">⬢ {busy ? 'Founding…' : `Found ${name || 'base'}`}</button>
           </div>
         </form>
         <aside className="flex min-w-0 flex-[1_1_420px] flex-col gap-4.5 border-l border-line-soft bg-well p-6">

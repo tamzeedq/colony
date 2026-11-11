@@ -17,7 +17,7 @@ export function Base() {
   const project = projectByKey(state, Number(key))
   const wide = useMediaQuery(WIDE)
   const [goal, setGoal] = useState(project?.goal ?? '')
-  const [sent, setSent] = useState(false)
+  const [sent, setSent] = useState<'' | 'sending' | 'ok' | 'error'>('')
   if (!project) return <Navigate to="/" replace />
   const agents = projectAgents(state, project)
   const healthCls = project.health.label === 'stable' ? 'text-st-done' : project.health.label === 'dormant' ? 'text-st-paused' : 'text-st-error'
@@ -41,14 +41,14 @@ export function Base() {
         <div className="flex-1" />
         <span className="text-xs text-ink-muted">This base: <b className="text-ink">{Math.round(sessionShare(state, project) * 100)}%</b> of session · <b className="text-ink">{usd(project.spendTodayUsd)}</b> today</span>
         <Link to={`/spawn?project=${project.key}`} className="rounded-md bg-ink px-3.5 py-2 text-[13px] font-semibold text-ground no-underline">+ Spawn agent</Link>
-        <Button onClick={() => dispatch({ type: 'pause', ids: agents.map((a) => a.id) })}>‖ Pause base</Button>
+        <Button onClick={() => dispatch({ type: 'pause', ids: agents.filter((a) => a.status !== 'paused').map((a) => a.id) })}>‖ Pause base</Button>
       </div>
 
-      <form className="flex flex-wrap items-center gap-3 border-b border-line-soft bg-well px-6 py-3" onSubmit={(e) => { e.preventDefault(); dispatch({ type: 'setGoal', projectId: project.id, goal }); setSent(true) }}>
+      <form className="flex flex-wrap items-center gap-3 border-b border-line-soft bg-well px-6 py-3" onSubmit={(e) => { e.preventDefault(); setSent('sending'); void dispatch({ type: 'setGoal', projectId: project.id, goal }).then((ok) => setSent(ok ? 'ok' : 'error')) }}>
         <label htmlFor="goal" className="text-[11px] font-semibold uppercase tracking-[.14em] text-you">Project goal</label>
-        <input id="goal" value={goal} onChange={(e) => { setGoal(e.target.value); setSent(false) }} className={cx(inputCls, 'min-w-0 flex-[1_1_400px]')} />
+        <input id="goal" value={goal} onChange={(e) => { setGoal(e.target.value); setSent('') }} className={cx(inputCls, 'min-w-0 flex-[1_1_400px]')} />
         <Button variant="command" type="submit">Send to {state.agents.find((a) => a.id === project.orchestratorId)?.callsign ?? 'Orchestrator'} ↵</Button>
-        <span className="text-xs text-ink-dim">{sent ? '✓ Sent · the Orchestrator will re-plan quests' : 'The Orchestrator turns this into quests'}</span>
+        <span className={cx('text-xs', sent === 'error' ? 'text-st-error' : 'text-ink-dim')}>{sent === 'ok' ? '✓ Sent · the Orchestrator will re-plan quests' : sent === 'sending' ? 'Sending…' : sent === 'error' ? '✕ Not sent' : 'The Orchestrator turns this into quests'}</span>
       </form>
 
       {wide ? (
@@ -89,10 +89,15 @@ function TeamStrip({ project }: { project: Project }) {
 }
 
 function RightRail({ project }: { project: Project }) {
-  const { state } = useStore()
+  const { state, mode } = useStore()
   const agents = projectAgents(state, project)
   const review = state.quests.find((q) => q.projectId === project.id && q.status === 'in_review')
   const branches = state.quests.filter((q) => q.projectId === project.id && q.branch && q.status !== 'done')
+  // Live: merge requests waiting on you, and agent branches (quests come in Phase 3).
+  const pendingMrs = mode === 'live' ? state.mergeRequests.filter((m) => m.projectId === project.id && m.status === 'pending') : []
+  const agentBranches = mode === 'live'
+    ? agents.filter((a) => a.branch && a.branch !== 'main' && !branches.some((q) => q.branch === a.branch))
+    : []
   return (
     <aside className="flex min-w-0 max-w-[440px] flex-[1_1_360px] flex-col border-l border-line-soft bg-well">
       <div className="border-b border-line-soft px-5 py-4.5"><ActivityFeed filter={(e) => e.projectId === project.id} limit={9} /></div>
@@ -126,7 +131,21 @@ function RightRail({ project }: { project: Project }) {
                 : <span className={cx('rounded-xs border px-1.5 font-semibold', q.status === 'blocked' ? 'border-st-blocked text-st-blocked' : q.status === 'failed' ? 'border-st-error text-st-error' : 'border-st-run text-st-run')}>{q.status === 'blocked' ? 'Blocked' : q.status === 'failed' ? 'Failed' : 'Active'}</span>}
             </div>
           ))}
+          {agentBranches.map((a) => {
+            const mr = pendingMrs.find((m) => m.branch === a.branch)
+            return (
+              <div key={a.id} className="flex items-center gap-2 py-1 text-xs">
+                <span className="min-w-0 flex-1 truncate font-mono text-ink-soft">{a.branch}</span>
+                {mr
+                  ? <Link to={`/review/${mr.id}`} className="rounded-xs border border-st-you px-1.5 font-semibold text-st-you no-underline">Review{mr.prNumber ? ` PR #${mr.prNumber}` : ''}</Link>
+                  : <span className="rounded-xs border border-st-run px-1.5 font-semibold text-st-run">Active</span>}
+              </div>
+            )
+          })}
         </div>
+        {pendingMrs.map((m) => (
+          <Link key={m.id} to={`/review/${m.id}`} className="rounded-md border border-st-you/45 bg-st-you/12 px-3 py-2 text-[13px] font-semibold text-st-you no-underline">! Review merge{m.prNumber ? ` PR #${m.prNumber}` : ''} · {m.branch} →</Link>
+        ))}
         {review && <Link to={`/review/${review.prNumber}`} className="rounded-md border border-st-you/45 bg-st-you/12 px-3 py-2 text-[13px] font-semibold text-st-you no-underline">! Review PR #{review.prNumber} · {review.title} →</Link>}
       </section>
     </aside>

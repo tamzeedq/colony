@@ -25,6 +25,12 @@ export interface Config {
   eventsPerAgent: number
   runnerGraceMs: number
   statsIntervalMs: number
+  /** Ops Deck origin for the pairing link (COLONY_UI_URL). */
+  uiUrl: string
+  /** Terminal sessions close after this long without input or output (default 30 min). */
+  terminalIdleMs: number
+  /** Concurrent terminal sessions per agent (default 3). */
+  maxTerminalsPerAgent: number
   /** Optional shared secret for the REST API and UI stream (see report: agents can reach the host port). */
   adminToken?: string
   /** CLAUDE_CODE_OAUTH_TOKEN. Secret: never log or serialise. */
@@ -85,6 +91,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     eventsPerAgent: num(get('COLONY_EVENTS_PER_AGENT'), 2000),
     runnerGraceMs: num(get('COLONY_RUNNER_GRACE_MS'), 30_000),
     statsIntervalMs: num(get('COLONY_STATS_INTERVAL_MS'), 5_000),
+    uiUrl: (get('COLONY_UI_URL') || 'http://localhost:5173').replace(/\/+$/, ''),
+    terminalIdleMs: num(get('COLONY_TERMINAL_IDLE_MS'), 30 * 60_000),
+    maxTerminalsPerAgent: num(get('COLONY_MAX_TERMINALS_PER_AGENT'), 3),
     adminToken: get('COLONY_ADMIN_TOKEN') || undefined,
     oauthToken: get('CLAUDE_CODE_OAUTH_TOKEN') || undefined,
     ...overrides,

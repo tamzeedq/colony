@@ -5,13 +5,17 @@
 //   - not privileged, CapDrop ALL (git server adds back CHOWN only, for the one-off volume
 //     ownership fix), no-new-privileges, non-root user `node` (uid 1000)
 //   - memory / cpu / pids limits
+import { randomBytes } from 'node:crypto'
+import type { Duplex } from 'node:stream'
 import Dockerode from 'dockerode'
 import { execIn, type ExecResult } from './exec'
 import {
   DIFF, ENSURE_REPO, LIST_BRANCHES, MERGE, MERGE_EXIT, PRE_RECEIVE_HOOK, REPO,
 } from './git-scripts'
-import type {
-  AgentContainerSpec, BranchInfo, ContainerInfo, ContainerStats, InfraDriver, MergeResult,
+import {
+  ContainerNotRunningError,
+  type AgentContainerSpec, type BranchInfo, type ContainerInfo, type ContainerStats, type InfraDriver,
+  type MergeResult, type ShellHandle,
 } from './types'
 import {
   InfraValidationError, assertAgentId, assertBranch, assertEnv, assertMessage, assertRepoUrl,
@@ -316,9 +320,70 @@ export function createDockerDriver(opts: DockerDriverOptions = {}): DockerDriver
           return { ok: false, conflict: false, message: `merge failed (exit ${r.exitCode}): ${detail}` }
       }
     },
+    async execInAgent(agentId, cmd, o = {}) {
+      assertAgentId(agentId)
+      if (!Array.isArray(cmd) || cmd.length === 0 || cmd.some((a) => typeof a !== 'string')) {
+        throw new InfraValidationError('cmd must be a non-empty argv array')
+      }
+      return exec(names.agentContainer(agentId), cmd, { user: 'node', timeoutMs: o.timeoutMs ?? 30_000 })
+    },
+
+    async openShell(agentId, o): Promise<ShellHandle> {
+      assertAgentId(agentId)
+      const cols = clampSize(o.cols, 80), rows = clampSize(o.rows, 24)
+      const c = docker.getContainer(names.agentContainer(agentId))
+      const info = await ignoreMissing(c.inspect())
+      if (!info?.State?.Running) throw new ContainerNotRunningError(`agent container for ${agentId} is not running`)
+      // Docker does not hang up the pty when the hijacked connection closes, and exec sessions
+      // cannot be killed through the API (spikes/03-pty gotcha 1). So the shell records its pid
+      // (`exec` keeps it) and kill() signals it from a second exec.
+      const pidFile = `/tmp/colony-pty-${agentId}-${randomBytes(6).toString('hex')}.pid`
+      const e = await c.exec({
+        Cmd: ['bash', '-c', `echo $$ > ${pidFile}; exec bash -l`],
+        AttachStdin: true, AttachStdout: true, AttachStderr: true,
+        Tty: true,
+        User: 'node',
+        WorkingDir: '/workspace',
+        Env: ['TERM=xterm-256color'],
+        ConsoleSize: [rows, cols],
+      })
+      // ConsoleSize at start (API >= 1.42) lays out the first prompt; resize() covers older engines.
+      const stream = (await e.start({ hijack: true, stdin: true, Tty: true, ConsoleSize: [rows, cols] } as Dockerode.ExecStartOptions)) as Duplex
+      await e.resize({ w: cols, h: rows }).catch(() => {})
+      let killed: Promise<void> | undefined
+      return {
+        stream,
+        async resize(w, h) {
+          await e.resize({ w: clampSize(w, 80), h: clampSize(h, 24) })
+        },
+        kill() {
+          killed ??= (async () => {
+            const script = `p=$(cat ${pidFile} 2>/dev/null) || exit 0; kill -HUP "$p" 2>/dev/null; ` +
+              'for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$p" 2>/dev/null || break; sleep 0.2; done; ' +
+              `kill -KILL "$p" 2>/dev/null; rm -f ${pidFile}`
+            try {
+              const k = await c.exec({ Cmd: ['sh', '-c', script], User: 'node', AttachStdout: false, AttachStderr: false })
+              // Detached start still answers with a (empty) response stream; drain it or its
+              // socket stays open and keeps the process alive.
+              const res = (await k.start({ Detach: true })) as unknown as NodeJS.ReadableStream | undefined
+              res?.resume?.()
+            } catch (err) {
+              // Container gone (or stopped): the shell went with it.
+              if (statusCode(err) !== 404 && statusCode(err) !== 409) throw err
+            } finally {
+              try { stream.end() } catch { /* closed */ }
+              try { stream.destroy() } catch { /* closed */ }
+            }
+          })()
+          return killed
+        },
+      }
+    },
   }
   return driver
 }
+
+const clampSize = (n: number, d: number) => (Number.isInteger(n) && n >= 1 ? Math.min(n, 1000) : d)
 
 /** `<name> <sha> <behind> <ahead>` lines from LIST_BRANCHES. */
 export function parseBranchList(out: string): BranchInfo[] {

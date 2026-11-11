@@ -105,13 +105,17 @@ Spec: `docs/phase1.md`. End-to-end check: `spikes/04-e2e/run.mjs` (PASS: project
 
 Known gaps carried forward: `contextPct` is always 0 (no honest source yet); guard thresholds are env-only (no Settings route); `resumeAfterReset` and the orchestrator reserve aren't implemented. On Windows, stopping `npm run …` can leave the `tsx` child running; run the control plane with `node --import tsx src/main.ts` when you need to stop it cleanly.
 
-### Phase 2 — Wire the Ops Deck prototype to the backend (≈1 week)
-The second Claude Design handoff is a runnable prototype of every screen on mock data (`apps/ui`). So the "ugly UI" step is skipped, and this phase becomes wiring:
-- [ ] Replace `src/data/mock.ts` + the simulation in `src/store/store.tsx` with REST + WebSocket from the control plane.
-- [ ] Route every action (pause, kill, restart, spawn, found base, merge approval) to real endpoints.
-- [ ] Take control to the real pause/hand-back flow. Terminal tab to a PTY (xterm.js).
-- [ ] Add Settings → Providers (keys) and an open model registry.
-**Exit:** you can run your real projects with it daily.
+### Phase 2 — Wire the Ops Deck prototype to the backend ✅ built 2026-11-10
+Spec: `docs/phase2.md`. The UI runs live by default; `?mock` keeps the design prototype's mock data.
+- [x] Live data: REST + `/api/stream` replace mock data and the simulation; reconnect banner; stream is the source of truth over optimistic updates.
+- [x] Pairing: the browser holds the admin token (printed `#pair=` link, or paste). Nothing on the host injects it, because containers can reach host ports.
+- [x] Every action routed to the API (pause/resume/kill/restart/model/spawn/found base/goal/caps/guards/alerts/merge approve + request changes).
+- [x] Take control / hand back (agent gets a git diff summary + your note). Terminal tab = real shell in the container (xterm.js, max 3 per agent, killed on close).
+- [x] Settings → Providers: keys encrypted at rest (AES-256-GCM, host-only master key), masked in the UI, test connection. Open model registry.
+- [x] Verified against the real backend in the browser: pairing, live World/Base/feed/branches/container stats, real plan limits, Inbox approval, Review with the real diff, reconnect after a control-plane restart (the runner reconnected in ~3 s).
+- [x] Base/agent session share now counts only the usage rise between an agent's own reports, not the whole plan.
+
+Not yet click-tested by a human: Approve from the UI, the terminal's visuals, Found base and Spawn forms against the real backend (tested by the UI subagent against a protocol fake). Not wired: Supabase toggle (Phase 4), allowed-tools, "Let Orchestrator decide", quests (Phase 3).
 
 ### Phase 3 — Orchestrator & teamwork (≈1–1.5 weeks)
 - [ ] Orchestrator MCP server + role prompt: plan → create tasks → spawn/assign workers → review → request merge.

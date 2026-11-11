@@ -22,9 +22,14 @@ function ensureAdminToken(dataDir: string): string {
   return t
 }
 
+function pairingLink(uiUrl: string, adminToken: string): string {
+  return `${uiUrl.replace(/\/+$/, '')}/#pair=${encodeURIComponent(adminToken)}`
+}
+
 async function main() {
   const config = loadConfig()
-  if (!config.adminToken) config.adminToken = ensureAdminToken(config.dataDir)
+  const adminToken = config.adminToken || ensureAdminToken(config.dataDir)
+  config.adminToken = adminToken
   const infra = createDockerDriver({ image: config.agentImage })
   const app = await createApp({
     config, infra,
@@ -33,6 +38,8 @@ async function main() {
   if (!config.oauthToken) console.warn('[colony] CLAUDE_CODE_OAUTH_TOKEN is not set (env or .env); agents cannot be spawned until it is.')
   const port = await app.start()
   console.log(`[colony] control plane on http://${config.bind}:${port} · data ${config.dataDir} · runners via ${config.publicRunnerUrl}`)
+  // The one place the admin token is printed: the browser pairs by opening this link.
+  console.log(`Open the Ops Deck: ${pairingLink(config.uiUrl, adminToken)}`)
 
   let closing = false
   const shutdown = async (sig: string) => {
