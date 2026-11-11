@@ -35,6 +35,13 @@ export interface Config {
   terminalIdleMs: number
   /** Concurrent terminal sessions per agent (default 3). */
   maxTerminalsPerAgent: number
+  /** node_modules/supabase/dist/supabase.js, run with this Node (docs/phase4.md). */
+  supabaseCli: string
+  /** First host port of the dev Supabase slots (slot n uses base + 10n … +9). */
+  supabaseBasePort: number
+  /** Stop a base's stack after this long without live agents (0 = never). */
+  supabaseIdleMs: number
+  supabaseStartTimeoutMs: number
   /** Optional shared secret for the REST API and UI stream (see report: agents can reach the host port). */
   adminToken?: string
   /** CLAUDE_CODE_OAUTH_TOKEN. Secret: never log or serialise. */
@@ -100,6 +107,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     uiUrl: (get('COLONY_UI_URL') || 'http://localhost:5173').replace(/\/+$/, ''),
     terminalIdleMs: num(get('COLONY_TERMINAL_IDLE_MS'), 30 * 60_000),
     maxTerminalsPerAgent: num(get('COLONY_MAX_TERMINALS_PER_AGENT'), 3),
+    supabaseCli: resolve(get('COLONY_SUPABASE_CLI') || join(repoRoot, 'node_modules', 'supabase', 'dist', 'supabase.js')),
+    supabaseBasePort: num(get('COLONY_SUPABASE_BASE_PORT'), 55300),
+    supabaseIdleMs: num(get('COLONY_SUPABASE_IDLE_MS'), 30 * 60_000),
+    supabaseStartTimeoutMs: num(get('COLONY_SUPABASE_START_TIMEOUT_MS'), 15 * 60_000),
     adminToken: get('COLONY_ADMIN_TOKEN') || undefined,
     oauthToken: get('CLAUDE_CODE_OAUTH_TOKEN') || undefined,
     ...overrides,

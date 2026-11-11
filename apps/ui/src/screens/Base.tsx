@@ -4,6 +4,7 @@ import { useStore, projectByKey, projectAgents, sessionShare } from '@/store/sto
 import { STATUS } from '@/design/status'
 import { BaseMap } from '@/components/base/BaseMap'
 import { QuestBoard } from '@/components/base/QuestBoard'
+import { SupabasePanel } from '@/components/base/SupabasePanel'
 import { ActivityFeed } from '@/components/feed/ActivityFeed'
 import { Button } from '@/components/ui/primitives'
 import { Bar, inputCls } from '@/components/ui/controls'
@@ -103,12 +104,7 @@ function RightRail({ project }: { project: Project }) {
       <div className="border-b border-line-soft px-5 py-4.5"><ActivityFeed filter={(e) => e.projectId === project.id} limit={9} /></div>
       <section aria-label="Infra" className="flex flex-col gap-3.5 px-5 py-4.5">
         <h2 className="text-section">Infra</h2>
-        <div className="rounded-lg border border-line bg-surface p-3">
-          <div className="mb-1.5 flex items-center gap-2"><span className="font-semibold">Supabase (dev)</span>
-            <span className={cx('text-[11px] font-semibold', project.supabase.status === 'running' ? 'text-st-done' : 'text-ink-dim')}>{project.supabase.status === 'running' ? '● Running' : project.supabase.status === 'none' ? '○ Not provisioned' : project.supabase.status}</span></div>
-          {project.supabase.url && <div className="font-mono text-xs text-ink-soft">{project.supabase.url}</div>}
-          {project.supabase.migration && <div className="mt-1.5 text-xs text-ink-dim">migration {project.supabase.migration}</div>}
-        </div>
+        <SupabasePanel project={project} />
         <div className="rounded-lg border border-line bg-surface p-3">
           <div className="mb-2 flex items-center"><span className="font-semibold">Containers</span><span className="ml-auto text-[11px] text-ink-dim">{agents.filter((a) => a.container.health !== 'down').length} running</span></div>
           {agents.map((a) => (

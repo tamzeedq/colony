@@ -88,6 +88,26 @@ export const AGENT_STATUSES = [
 
 export type Controller = 'agent' | 'you'
 
+/** Dev Supabase stack of a project (docs/phase4.md). `url` / `dbUrl` are host URLs for the commander. */
+export interface SupabaseInfo {
+  status: 'running' | 'stopped' | 'provisioning' | 'error' | 'none'
+  url?: string
+  studioUrl?: string
+  dbUrl?: string
+  /** Latest applied migration version. */
+  migration?: string
+  /** Studio + pg_meta also run (more RAM). */
+  studio?: boolean
+  /** Stable port slot: ports 55300 + 10*slot … +9. */
+  slot?: number
+  error?: string
+}
+
+export interface SupabaseMigration { version: string; name: string }
+
+/** GET /api/projects/:id/supabase */
+export interface SupabaseDetails extends SupabaseInfo { migrations: SupabaseMigration[] }
+
 export interface Project {
   id: ID
   key: number                 // 1–9, keyboard slot
@@ -96,7 +116,7 @@ export interface Project {
   stack: string[]
   goal: string                // sent to the Orchestrator
   health: { score: number; label: 'stable' | 'strained' | 'dormant' | 'down' } // score 0–10
-  supabase: { status: 'running' | 'stopped' | 'provisioning' | 'error' | 'none'; url?: string; studioUrl?: string; migration?: string }
+  supabase: SupabaseInfo
   orchestratorId?: ID
   agentIds: ID[]
   spendTodayUsd: number

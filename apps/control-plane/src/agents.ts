@@ -44,6 +44,16 @@ export interface AgentHooks {
   afterRemove?(agent: Agent): void
   /** An agent crashed or lost contact. */
   afterCrash?(agent: Agent, reason: string): void
+  /** An agent was spawned (its project's dev Supabase starts if stopped). */
+  afterSpawn?(agent: Agent): void
+}
+
+/** Dev Supabase details for agent containers (docs/phase4.md). */
+export interface BackendProvider {
+  /** Env vars for agents in this project, or undefined when no stack is provisioned. */
+  env(projectId: string): Record<string, string> | undefined
+  /** "Dev backend" section appended to the system prompt, or undefined. */
+  prompt(projectId: string): string | undefined
 }
 
 const CALLSIGN_WORDS = [
@@ -64,6 +74,7 @@ export class AgentManager {
   private timers = new Map<string, NodeJS.Timeout>()
   private rateBase: { usedPct: number; at: number; resetsAt: string } | undefined
   hooks: AgentHooks = {}
+  backend?: BackendProvider
 
   constructor(
     private store: Store,
@@ -142,7 +153,14 @@ export class AgentManager {
     this.store.saveAgent(rec)
     this.store.broadcastSnapshot()
     await this.startContainer(rec, token)
+    this.hooks.afterSpawn?.(agent)
     return this.store.toAgent(this.get(id))
+  }
+
+  /** The stored role prompt plus sections that depend on the project's current infra. */
+  systemPrompt(a: Agent): string {
+    const extra = this.backend?.prompt(a.projectId)
+    return extra ? `${a.rolePrompt.trimEnd()}\n\n${extra.trim()}\n` : a.rolePrompt
   }
 
   /** Environment for the agent container (docs/phase1.md "Agent container environment"). */
@@ -157,8 +175,9 @@ export class AgentManager {
       COLONY_GIT_URL: this.config.gitUrl,
       COLONY_BRANCH: a.branch ?? `agent/${a.callsign.toLowerCase()}`,
       COLONY_MODEL: model?.cliModel ?? a.model,
-      COLONY_SYSTEM_PROMPT_B64: Buffer.from(a.rolePrompt, 'utf8').toString('base64'),
+      COLONY_SYSTEM_PROMPT_B64: Buffer.from(this.systemPrompt(a), 'utf8').toString('base64'),
     }
+    Object.assign(env, this.backend?.env(a.projectId) ?? {})
     // Colony's MCP tools (docs/phase3.md), authenticated with the same per-agent token.
     const mcp = { mcpServers: { colony: { type: 'http', url: this.config.publicMcpUrl, headers: { Authorization: `Bearer ${token}` } } } }
     env.COLONY_MCP_CONFIG_B64 = Buffer.from(JSON.stringify(mcp), 'utf8').toString('base64')

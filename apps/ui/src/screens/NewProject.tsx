@@ -50,7 +50,7 @@ export function NewProject() {
       setBusy('Creating base…')
       project = await endpoints.createProject({
         name: name.trim(), goal: goal.trim() || undefined, stack,
-        repoUrl: repoMode === 'github' && repo.trim() ? repo.trim() : undefined, dailyCapUsd: 15,
+        repoUrl: repoMode === 'github' && repo.trim() ? repo.trim() : undefined, dailyCapUsd: 15, supabase: supa,
       })
       dispatch({ type: 'upsertProject', project })
     } catch (e) {
@@ -121,7 +121,7 @@ export function NewProject() {
           <Field label="Goal brief for the Orchestrator"><textarea rows={4} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="What should this base build first?" className={inputCls} /></Field>
           <div className="flex items-center gap-3.5 rounded-lg border border-line bg-surface p-3.5">
             <Switch on={supa} onChange={setSupa} label="Provision dev Supabase" />
-            <div><b className="text-sm">Provision a dev Supabase</b><div className="text-xs text-ink-muted">Local stack in Docker · Postgres, Auth, Storage{live ? ' · not wired yet (later phase)' : ''}</div></div>
+            <div><b className="text-sm">Provision a dev Supabase</b><div className="text-xs text-ink-muted">Local stack in Docker · Postgres, Auth, REST</div></div>
           </div>
           <fieldset className="m-0 border-0 p-0">
             <legend className="mb-2 text-xs text-ink-muted">Starting team</legend>

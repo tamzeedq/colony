@@ -10,6 +10,8 @@ import { registerRoutes } from './http'
 import { LoopDetector } from './loops'
 import { registerMcp } from './mcp'
 import { QuestService } from './quests'
+import { SupabaseService } from './supabase'
+import { unavailableSupabase, type SupabaseDriver } from './infra/supabase'
 import type { InfraDriver } from './infra/types'
 import { MergeService, ProjectService } from './projects'
 import { ProviderService, type FetchLike } from './providers'
@@ -22,6 +24,9 @@ import { attachWebSockets } from './ws'
 export interface AppOptions {
   config: Config
   infra: InfraDriver
+  /** Dev Supabase driver (docs/phase4.md). Tests pass FakeSupabase; default is a no-op that
+   *  refuses to start stacks. */
+  supabase?: SupabaseDriver
   /** Fastify logger option; false in tests. */
   logger?: boolean | object
   /** Skip the background stats poller (tests drive tick() themselves). */
@@ -44,6 +49,7 @@ export interface ColonyApp {
   stats: StatsPoller
   quests: QuestService
   loops: LoopDetector
+  supabase: SupabaseService
   /** Reconcile with Docker and start listening. Returns the bound port. */
   start(port?: number, host?: string): Promise<number>
   /** Graceful shutdown. Agent containers keep running and reconnect to the next instance. */
@@ -69,6 +75,11 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const quests = new QuestService(store, infra, agents)
   merges.quests = quests
   const loops = new LoopDetector(store, quests)
+  const supabase = new SupabaseService(store, db, opts.supabase ?? unavailableSupabase(), config, log)
+  supabase.quests = quests
+  projects.supabase = supabase
+  agents.backend = supabase
+  agents.hooks.afterSpawn = (a) => supabase.onAgentSpawn(a)
   agents.hooks.afterEvent = (ev) => loops.onEvent(ev)
   agents.hooks.afterRemove = (a) => { loops.forget(a.id); quests.onAgentRemoved(a) }
   agents.hooks.afterCrash = (a, reason) => {
@@ -78,22 +89,24 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const stats = new StatsPoller(store, infra, config.statsIntervalMs, log)
 
   const fastify = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 })
-  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests })
-  registerMcp(fastify, { store, agents, quests, merges, infra })
+  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests, supabase })
+  registerMcp(fastify, { store, agents, quests, merges, infra, supabase })
   const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
   return {
-    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops,
+    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase,
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log)
+      await supabase.reconcile()
       await fastify.listen({ port, host })
-      if (opts.poll !== false) { stats.start(); loops.start() }
+      if (opts.poll !== false) { stats.start(); loops.start(); supabase.startTimer() }
       const addr = fastify.server.address()
       return typeof addr === 'object' && addr ? addr.port : port
     },
     async close() {
       stats.stop()
       loops.stop()
+      supabase.stopTimer()
       agents.closeAll()
       await terminals.close()
       sockets.close()

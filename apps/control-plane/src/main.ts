@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createApp } from './app'
 import { loadConfig } from './config'
 import { createDockerDriver } from './infra/docker'
+import { createCliSupabaseDriver } from './infra/supabase'
 
 /** Agent containers can reach the host port (even a loopback-only bind, via Docker Desktop),
  *  so the REST API and UI stream always require an admin token. It lives only on the host,
@@ -31,8 +32,12 @@ async function main() {
   const adminToken = config.adminToken || ensureAdminToken(config.dataDir)
   config.adminToken = adminToken
   const infra = createDockerDriver({ image: config.agentImage })
+  const supabase = createCliSupabaseDriver({
+    docker: infra.docker, cliPath: config.supabaseCli, rootDir: join(config.dataDir, 'supabase'),
+    basePort: config.supabaseBasePort, log: { warn: (m) => console.warn(`[colony] ${m}`) },
+  })
   const app = await createApp({
-    config, infra,
+    config, infra, supabase,
     logger: { level: process.env.COLONY_LOG_LEVEL ?? 'info', redact: ['req.headers.authorization', 'req.headers["x-colony-admin"]'] },
   })
   if (!config.oauthToken) console.warn('[colony] CLAUDE_CODE_OAUTH_TOKEN is not set (env or .env); agents cannot be spawned until it is.')

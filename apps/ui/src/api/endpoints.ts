@@ -1,11 +1,12 @@
 // Typed calls for every control-plane route the UI uses (docs/phase2.md "UI action → API").
-import type { ActivityEvent, Agent, Alert, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot } from '@/types/colony'
+import type { ActivityEvent, Agent, Alert, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
 import { api, apiText, enc } from './client'
 
 export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string }
 export interface QuestInput { title: string; brief?: string; priority?: Quest['priority']; acceptance?: string[] }
 export interface QuestPatch { status?: Quest['status']; title?: string; brief?: string; priority?: Quest['priority'] }
-export interface ProjectInput { name: string; goal?: string; stack?: string[]; repoUrl?: string; dailyCapUsd?: number }
+export interface ProjectInput { name: string; goal?: string; stack?: string[]; repoUrl?: string; dailyCapUsd?: number; supabase?: boolean; supabaseStudio?: boolean }
+export type SupabaseAction = 'start' | 'stop' | 'reset'
 
 const a = (id: ID) => `/api/agents/${enc(id)}`
 
@@ -29,6 +30,12 @@ export const endpoints = {
   createProject: (input: ProjectInput) => api<Project>('POST', '/api/projects', input),
   patchProject: (id: ID, patch: { goal?: string; dailyCapUsd?: number }) => api<Project>('PATCH', `/api/projects/${enc(id)}`, patch),
   diff: (projectId: ID, branch: string) => apiText(`/api/projects/${enc(projectId)}/diff?branch=${enc(branch)}`),
+
+  // dev Supabase (docs/phase4.md "HTTP"). start/stop/reset answer 202 and finish in the background.
+  supabaseDetails: (projectId: ID) => api<SupabaseDetails>('GET', `/api/projects/${enc(projectId)}/supabase`),
+  supabaseAction: (projectId: ID, action: SupabaseAction) =>
+    api<Partial<SupabaseInfo> | undefined>('POST', `/api/projects/${enc(projectId)}/supabase/${action}`, action === 'reset' ? { confirm: true } : undefined),
+  setSupabaseStudio: (projectId: ID, studio: boolean) => api<Partial<SupabaseInfo> | undefined>('PATCH', `/api/projects/${enc(projectId)}/supabase`, { studio }),
 
   // quests (docs/phase3.md "Quest lifecycle")
   createQuest: (projectId: ID, body: QuestInput) => api<Quest>('POST', `/api/projects/${enc(projectId)}/quests`, body),

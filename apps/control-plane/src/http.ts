@@ -13,6 +13,7 @@ import type { ProviderService, ProviderUpdate } from './providers'
 import { isPriority, isQuestStatus, type QuestService } from './quests'
 import type { Store } from './store'
 import { assertRepoUrl } from './infra/validate'
+import type { SupabaseService } from './supabase'
 
 export interface HttpDeps {
   config: Config
@@ -23,6 +24,7 @@ export interface HttpDeps {
   guards: GuardService
   providers: ProviderService
   quests: QuestService
+  supabase: SupabaseService
 }
 
 // ── validation helpers ────────────────────────────────────────────────────────
@@ -101,6 +103,13 @@ export function parseGuardsPatch(b: Obj): Partial<Guards> {
 const param = (req: FastifyRequest, k: string) => String((req.params as Obj)[k] ?? '')
 const query = (req: FastifyRequest) => (req.query ?? {}) as Record<string, string | undefined>
 const truthy = (v: string | undefined) => v === '1' || v === 'true'
+
+function bool(o: Obj, k: string): boolean | undefined {
+  const v = o[k]
+  if (v === undefined || v === null) return undefined
+  if (typeof v !== 'boolean') throw badRequest(`'${k}' must be a boolean`)
+  return v
+}
 const BRANCH_RE = /^(?!.*\.\.)(?!\/)(?!.*\/$)[A-Za-z0-9._\/-]{1,200}$/
 
 export function isLocalOrigin(origin: string | undefined): boolean {
@@ -126,7 +135,7 @@ export function checkAdmin(config: Config, headers: Record<string, string | stri
 // ── routes ────────────────────────────────────────────────────────────────────
 
 export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
-  const { store, agents, projects, merges, config, guards, providers, quests } = d
+  const { store, agents, projects, merges, config, guards, providers, quests, supabase } = d
 
   // Accept empty JSON bodies (e.g. POST /pause sent with a JSON content type).
   app.removeContentTypeParser('application/json')
@@ -173,6 +182,8 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
       stack: strList(b, 'stack'),
       repoUrl: repoUrl || undefined,
       dailyCapUsd: num(b, 'dailyCapUsd', { min: 0 }),
+      supabase: bool(b, 'supabase'),
+      supabaseStudio: bool(b, 'supabaseStudio'),
     })
     return reply.status(201).send(project)
   })
@@ -186,6 +197,27 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
     return r
   })
   app.delete('/api/projects/:id', async (req) => projects.remove(param(req, 'id'), { purge: truthy(query(req).purge) }))
+  // dev Supabase (docs/phase4.md)
+  app.get('/api/projects/:id/supabase', async (req) => supabase.details(param(req, 'id')))
+  app.post('/api/projects/:id/supabase/:action', async (req, reply) => {
+    const id = param(req, 'id')
+    const action = param(req, 'action')
+    projects.get(id)
+    let info
+    if (action === 'start') info = supabase.start(id)
+    else if (action === 'stop') info = supabase.stop(id)
+    else if (action === 'reset') info = supabase.reset(id, bool(body(req), 'confirm') === true)
+    else throw badRequest("action must be 'start', 'stop' or 'reset'")
+    return reply.status(202).send(info)
+  })
+  app.patch('/api/projects/:id/supabase', async (req) => {
+    const b = body(req)
+    for (const k of Object.keys(b)) if (k !== 'studio') throw badRequest(`unknown field '${k}'`)
+    const studio = bool(b, 'studio')
+    if (studio === undefined) throw badRequest("send 'studio'")
+    projects.get(param(req, 'id'))
+    return supabase.setStudio(param(req, 'id'), studio)
+  })
   app.get('/api/projects/:id/branches', async (req) => projects.branches(param(req, 'id')))
   app.get('/api/projects/:id/diff', async (req, reply) => {
     const branch = query(req).branch

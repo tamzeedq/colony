@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { findModel, ROLE_IDS, type ActivityEvent, type Quest, type RoleId } from '@colony/shared'
 import { sha256, type AgentManager } from './agents'
 import { HttpError } from './errors'
+import type { SupabaseService } from './supabase'
 import type { InfraDriver } from './infra/types'
 import type { MergeService } from './projects'
 import { isPriority, isQuestStatus, type QuestService } from './quests'
@@ -17,6 +18,8 @@ export interface McpDeps {
   quests: QuestService
   merges: MergeService
   infra: InfraDriver
+  /** Optional so older tests can build tools without it. */
+  supabase?: SupabaseService
 }
 
 type Args = Record<string, unknown>
@@ -99,7 +102,7 @@ function eventLine(e: ActivityEvent): string {
 // ── tools ─────────────────────────────────────────────────────────────────────
 
 export function buildTools(d: McpDeps): Tool[] {
-  const { store, agents, quests, merges, infra } = d
+  const { store, agents, quests, merges, infra, supabase } = d
   const WORKER_ROLES = ROLE_IDS.filter((r) => r !== 'orchestrator')
 
   const peer = (id: string, me: AgentRecord): AgentRecord => {
@@ -285,6 +288,35 @@ export function buildTools(d: McpDeps): Tool[] {
         if (target.agent.id === me.agent.id) throw new ToolError('you cannot stop yourself')
         await agents.kill(target.agent.id)
         return { ok: true, stopped: target.agent.callsign }
+      },
+    },
+    {
+      name: 'get_backend', roles: 'all',
+      description: 'Status of the dev Supabase of this base and the values agents use to reach it (SUPABASE_URL, keys, DATABASE_URL). Use it if those env vars are missing in your container.',
+      inputSchema: obj({}),
+      run: (_a, me) => {
+        if (!supabase) return { status: 'none', env: null }
+        return supabase.backendFor(me.agent.projectId)
+      },
+    },
+    {
+      name: 'list_migrations', roles: 'all',
+      description: 'Migrations applied to the dev Supabase of this base (version, name), oldest first.',
+      inputSchema: obj({}),
+      run: async (_a, me) => {
+        if (!supabase) throw new ToolError('this base has no dev Supabase')
+        return { migrations: await supabase.migrations(me.agent.projectId) }
+      },
+    },
+    {
+      name: 'gen_types', roles: 'all',
+      description: 'Generate TypeScript types for the dev Supabase schema (supabase gen types typescript). Returns the file contents; save it where the project keeps its types.',
+      inputSchema: obj({}),
+      run: async (_a, me) => {
+        if (!supabase) throw new ToolError('this base has no dev Supabase')
+        const ts = await supabase.genTypes(me.agent.projectId)
+        const max = 200 * 1024
+        return ts.length > max ? `${ts.slice(0, max)}\n// … clipped at 200 KB` : ts
       },
     },
     { name: 'request_human', roles: 'all',

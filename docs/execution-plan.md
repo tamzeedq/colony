@@ -128,11 +128,15 @@ Spec: `docs/phase3.md`.
 
 Not yet: the commander's Approve click on that merge from the UI; a multi-worker run with dependencies and conflicts against real containers (covered by tests with the fake driver). "Let Orchestrator decide" in Spawn is still not wired.
 
-### Phase 4 — Dev Supabase per project (≈3–4 days)
-- [ ] Provision on project create (toggle), port allocation, start/stop with project activity, wipe/reset button.
-- [ ] Inject env vars into agents; install the Supabase MCP server or CLI in agent image for migrations/types.
-- [ ] Infra panel: status, Studio link, migrations list.
-**Exit:** backend agents build against a real, isolated Postgres/Auth.
+### Phase 4 — Dev Supabase per project ✅ built 2026-11-11
+Spec: `docs/phase4.md`.
+- [x] Host Supabase CLI pinned to 3.1.0; per-project workdir and `project_id = colony-<slug>`; stable 10-port slots from 55300; minimal stack by default (db, auth, rest, kong), Studio optional. Never `stop --all`.
+- [x] Provision on project create (toggle) or later; start/stop/reset (reset needs confirm); stopped stacks start when an agent spawns; idle stacks stop after 30 min with no live agents; reconcile on boot; delete removes the stack first.
+- [x] Agents get `SUPABASE_URL`, keys and `DATABASE_URL` (in-network kong/db aliases) plus a "Dev backend" prompt section; MCP tools `get_backend`, `list_migrations`, `gen_types`; agent image has the Supabase CLI and psql.
+- [x] Infra panel: status, API/psql URLs, Studio link and toggle, migrations list, Start/Stop/Reset.
+- [x] Verified on one base (Team Check): stack up in 27 s, reachable only from the project network, the commander's own Supabase untouched. Sonnet orchestrator staffed a Haiku worker who wrote `supabase/migrations/…_create_greetings.sql`, applied it with `supabase db push`, and the migration and row show in Colony; Studio toggle restarted the stack in 21 s with data kept.
+
+Not yet: `gen_types` against the real CLI (tests only); the merge of that migration branch awaits the commander.
 
 ### Phase 5 — Game UI polish (≈1 week; screens already exist from the prototype)
 - [ ] PixiJS layer in `BaseMap`: handoff pulses, pan/zoom, follow activity.

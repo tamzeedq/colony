@@ -6,6 +6,7 @@ import type { Config } from './config'
 import { conflict, HttpError, infraError, notFound } from './errors'
 import type { InfraDriver, MergeResult } from './infra/types'
 import type { QuestService } from './quests'
+import type { SupabaseService } from './supabase'
 import { newId, nowIso, type Store } from './store'
 
 export interface CreateProjectInput {
@@ -14,9 +15,13 @@ export interface CreateProjectInput {
   stack?: string[]
   repoUrl?: string
   dailyCapUsd?: number
+  /** Provision a dev Supabase in the background (docs/phase4.md). */
+  supabase?: boolean
+  supabaseStudio?: boolean
 }
 
 export class ProjectService {
+  supabase?: SupabaseService
   constructor(private store: Store, private infra: InfraDriver, private agents: AgentManager, private config: Config) {}
 
   get(id: string) {
@@ -50,7 +55,8 @@ export class ProjectService {
     const rec = { project, slug, createdAt: nowIso() }
     this.store.saveProject(rec)
     this.store.broadcastSnapshot()
-    return this.store.toProject(rec)
+    if (input.supabase && this.supabase) this.supabase.provisionNew(project.id, { studio: input.supabaseStudio })
+    return this.store.toProject(this.get(project.id))
   }
 
   /** Update goal and/or daily cap. A new goal is forwarded to the orchestrator, if any. */
@@ -80,6 +86,8 @@ export class ProjectService {
     const rec = this.get(id)
     for (const a of this.store.projectAgents(id)) await this.agents.kill(a.agent.id, opts)
     try {
+      // The stack is attached to the project network, so it goes first.
+      await this.supabase?.removeProject(rec, { purge: opts.purge })
       await this.infra.removeProject(rec.slug, { purge: opts.purge })
     } catch (e) {
       throw infraError(e, 'failed to remove project infrastructure')
