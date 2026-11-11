@@ -85,7 +85,10 @@ export function AlertItem({ alert, compact = false }: { alert: Alert; compact?: 
   const { state, dispatch } = useStore()
   const act = useAlertAction()
   const [reply, setReply] = useState('')
-  const k = KIND[alert.kind]
+  // A crash-kind alert raised as heads-up (e.g. "resumed after restart") is information, not an emergency.
+  const k = alert.kind === 'crash' && alert.severity === 'heads_up'
+    ? { g: '↻', label: 'Heads-up · recovered', color: 'text-st-blocked', bar: 'bg-st-blocked' }
+    : KIND[alert.kind]
   const sev = ALERT_SEVERITY[alert.severity]
   const agent = state.agents.find((a) => a.id === alert.agentId)
   const project = state.projects.find((p) => p.id === alert.projectId)
