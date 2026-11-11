@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "node scripts/start.mjs",
     "dev:ui": "npm run dev -w @colony/ui",
     "build:ui": "npm run build -w @colony/ui",
     "agent:image": "npm run build -w @colony/agent-runner && docker build -f docker/agent.Dockerfile -t colony-agent:dev docker",
