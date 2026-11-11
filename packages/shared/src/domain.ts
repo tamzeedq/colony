@@ -108,6 +108,34 @@ export interface SupabaseMigration { version: string; name: string }
 /** GET /api/projects/:id/supabase */
 export interface SupabaseDetails extends SupabaseInfo { migrations: SupabaseMigration[] }
 
+/** Where merged work goes on GitHub (docs/phase6.md "GitHub"). Never holds the token. */
+export interface GithubPublish {
+  at: ISODate
+  /** PR URL (mode 'pr'). */
+  url?: string
+  /** Branch pushed on GitHub: colony/<yyyymmdd-hhmm> (pr) or the base (push). */
+  branch: string
+  /** Colony main commit that was pushed. */
+  sha: string
+  mode: 'pr' | 'push'
+}
+
+export interface GithubConfig {
+  repo: string                // 'owner/name'
+  base: string                // PR base / push target, default 'main'
+  mode: 'pr' | 'push'
+  lastPublish?: GithubPublish
+}
+
+/** GET /api/github: the token's state. The token itself is never returned. */
+export interface GithubTokenStatus {
+  configured: boolean
+  status: 'missing' | 'untested' | 'connected' | 'error'
+  login?: string
+  testedAt?: ISODate
+  statusDetail?: string
+}
+
 export interface Project {
   id: ID
   key: number                 // 1–9, keyboard slot
@@ -117,6 +145,7 @@ export interface Project {
   goal: string                // sent to the Orchestrator
   health: { score: number; label: 'stable' | 'strained' | 'dormant' | 'down' } // score 0–10
   supabase: SupabaseInfo
+  github?: GithubConfig
   orchestratorId?: ID
   agentIds: ID[]
   spendTodayUsd: number

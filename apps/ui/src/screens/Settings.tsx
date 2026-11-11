@@ -10,10 +10,11 @@ import { meterTone } from '@/design/status'
 import { errorMessage } from '@/api/client'
 import { useAlertPrefs, setCategoryPref, type AlertCategory } from '@/lib/alertPrefs'
 import { useSound } from '@/hooks/useSound'
+import { GithubSettings } from './GithubSettings'
 
 const SECTIONS = [
   { id: 'limits', g: '◷', label: 'Limits & budgets' }, { id: 'alerts', g: '♪', label: 'Alerts & sound' },
-  { id: 'providers', g: '◈', label: 'Providers & keys' },
+  { id: 'providers', g: '◈', label: 'Providers & keys' }, { id: 'github', g: '⑂', label: 'GitHub' },
   { id: 'docker', g: '▣', label: 'Docker & host' }, { id: 'teams', g: '⬡', label: 'Team templates' },
   { id: 'roles', g: '☰', label: 'Role library' }, { id: 'keys', g: '⌨', label: 'Keyboard' },
 ]
@@ -36,6 +37,7 @@ export function Settings() {
         {section === 'limits' && <Limits />}
         {section === 'alerts' && <AlertsSection />}
         {section === 'providers' && <Providers />}
+        {section === 'github' && <GithubSettings />}
         {section === 'docker' && <Docker />}
         {section === 'teams' && <Teams />}
         {section === 'roles' && <Roles />}

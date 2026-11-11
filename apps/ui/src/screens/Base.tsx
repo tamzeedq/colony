@@ -5,6 +5,7 @@ import { STATUS } from '@/design/status'
 import { BaseMap } from '@/components/base/BaseMap'
 import { QuestBoard } from '@/components/base/QuestBoard'
 import { SupabasePanel } from '@/components/base/SupabasePanel'
+import { GithubPanel } from '@/components/base/GithubPanel'
 import { ActivityFeed } from '@/components/feed/ActivityFeed'
 import { Button } from '@/components/ui/primitives'
 import { Bar, inputCls } from '@/components/ui/controls'
@@ -105,6 +106,7 @@ function RightRail({ project }: { project: Project }) {
       <section aria-label="Infra" className="flex flex-col gap-3.5 px-5 py-4.5">
         <h2 className="text-section">Infra</h2>
         <SupabasePanel project={project} />
+        <GithubPanel project={project} />
         <div className="rounded-lg border border-line bg-surface p-3">
           <div className="mb-2 flex items-center"><span className="font-semibold">Containers</span><span className="ml-auto text-[11px] text-ink-dim">{agents.filter((a) => a.container.health !== 'down').length} running</span></div>
           {agents.map((a) => (

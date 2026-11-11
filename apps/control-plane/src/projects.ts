@@ -5,6 +5,7 @@ import type { AgentManager } from './agents'
 import type { Config } from './config'
 import { conflict, HttpError, infraError, notFound } from './errors'
 import type { InfraDriver, MergeResult } from './infra/types'
+import { githubConfigFromRepoUrl } from './github'
 import type { QuestService } from './quests'
 import type { SupabaseService } from './supabase'
 import { newId, nowIso, type Store } from './store'
@@ -37,6 +38,7 @@ export class ProjectService {
     } catch (e) {
       throw infraError(e, 'failed to create project infrastructure')
     }
+    const github = githubConfigFromRepoUrl(input.repoUrl)
     const project: Project = {
       id: newId(`p-${slug}`),
       key: this.store.nextKey(),
@@ -46,6 +48,7 @@ export class ProjectService {
       goal: input.goal ?? '',
       health: { score: 0, label: 'dormant' },
       supabase: { status: 'none' },
+      ...(github ? { github } : {}),
       agentIds: [],
       spendTodayUsd: 0,
       dailyCapUsd: input.dailyCapUsd ?? this.config.defaultProjectDailyCapUsd,
