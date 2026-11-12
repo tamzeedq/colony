@@ -49,6 +49,30 @@ function readEnvKey(key) {
   return m ? m[1].trim().replace(/^["']|["']$/g, '') : undefined
 }
 
+/** Windows: find Docker Desktop (per-user or machine-wide install), start it, and wait for the
+ *  engine. Returns the server version, or null. COLONY_NO_DOCKER_START=1 turns this off. */
+async function startDockerDesktop() {
+  if (process.platform !== 'win32' || process.env.COLONY_NO_DOCKER_START === '1') return null
+  const candidates = []
+  const cli = await run('where', ['docker'])
+  // <install>/resources/bin/docker.exe -> <install>/Docker Desktop.exe
+  for (const p of (cli ?? '').split(/\r?\n/).filter(Boolean)) candidates.push(join(dirname(p), '..', '..', 'Docker Desktop.exe'))
+  for (const base of [process.env.ProgramFiles, process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Programs')]) {
+    if (base) candidates.push(join(base, 'Docker', 'Docker', 'Docker Desktop.exe'), join(base, 'DockerDesktop', 'Docker Desktop.exe'))
+  }
+  const exe = candidates.find((c) => existsSync(c))
+  if (!exe) return null
+  say('Docker is not running; starting Docker Desktop (this can take a minute)…')
+  spawn(exe, [], { detached: true, stdio: 'ignore', windowsHide: false }).unref()
+  for (let waited = 0; waited < 180; waited += 3) {
+    await new Promise((r) => setTimeout(r, 3000))
+    const v = await run('docker', ['version', '--format', '{{.Server.Version}}'])
+    if (v) { say(`Docker Desktop is up after ~${waited + 3} s.`); return v }
+    if (waited && waited % 30 === 0) say(`Still waiting for Docker Desktop (${waited} s)…`)
+  }
+  return null
+}
+
 // ── prerequisites ──────────────────────────────────────────────────────────────
 const [major] = process.versions.node.split('.').map(Number)
 if (major < 22) fail(`Node 22 or newer is required (this is ${process.versions.node}).`)
@@ -58,7 +82,8 @@ if (await portInUse(CP_PORT) || await portInUse(UI_PORT)) {
   fail(`Port ${CP_PORT} or ${UI_PORT} is already in use. Colony may already be running (open http://localhost:${UI_PORT}), or stop whatever holds the port.`)
 }
 
-const dockerVersion = await run('docker', ['version', '--format', '{{.Server.Version}}'])
+let dockerVersion = await run('docker', ['version', '--format', '{{.Server.Version}}'])
+if (!dockerVersion) dockerVersion = await startDockerDesktop()
 if (!dockerVersion) fail('Docker is not reachable. Start Docker Desktop and try again.')
 const image = await run('docker', ['image', 'inspect', '--format', '{{.Id}}', 'colony-agent:dev'])
 if (!image) say(paint('33', 'The agent image colony-agent:dev is missing; agents cannot start until you run `npm run agent:image`.'))

@@ -49,7 +49,9 @@ export async function reconcile(store: Store, infra: InfraDriver, agents: AgentM
     } else if (rec.agent.status !== 'error' && rec.agent.status !== 'done' && opts.autoResume && rec.internal.desired === 'run') {
       try {
         await agents.restart(id)
+        // One alert per agent: a later restart refreshes it instead of stacking duplicates.
         store.raiseAlert({
+          id: `al-resumed-${id}`,
           kind: 'crash', severity: 'heads_up', projectId: rec.agent.projectId, agentId: id,
           title: `${rec.agent.callsign} resumed after restart`,
           detail: `Its container was ${c ? 'stopped' : 'missing'} when Colony started; it was restarted on its workspace and continues its session.`,
