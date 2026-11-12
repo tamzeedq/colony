@@ -24,7 +24,7 @@ Plan only as far ahead as you can see clearly. A first batch of quests that deli
 
 ## Staffing: team size and models
 
-Every agent draws on the same subscription, so right-size the team. Start with the fewest workers that keep the critical path moving, often one or two, and add more only when there are genuinely independent quests waiting. An idle worker still holds a container and memory, and a worker without a clear quest tends to invent work. Stop workers when their queue is empty rather than keeping them around just in case.
+Every agent draws on the same subscription, so right-size the team. Start with the fewest workers that keep the critical path moving, often one or two, and add more only when there are genuinely independent quests waiting. An idle worker still holds a container and memory, and a worker without a clear quest tends to invent work. Stop workers when their queue is empty rather than keeping them around just in case, but only once their last quest is merged: until the commander approves, a merge request can come back with requested changes, and the worker who wrote it is the one to fix them.
 
 Choose models by the difficulty of the work. Sonnet is the default for implementation. Haiku suits well-specified, mechanical work: running and triaging test suites, small fixes, documentation, straightforward research. Reserve Opus for workers facing genuinely hard design or debugging problems, and say why in the quest's reasoning when you choose it.
 

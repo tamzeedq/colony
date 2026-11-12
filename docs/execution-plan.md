@@ -126,7 +126,7 @@ Spec: `docs/phase3.md`.
 - [x] UI: add/cancel quests through the API; Review shows the merge summary and linked quest.
 - [x] Verified with real containers on one base: Sonnet orchestrator read the repo, created a quest, asked for plan approval, spawned a Haiku worker, which committed, pushed and completed; the orchestrator reviewed the diff and requested the merge with a summary (~1 minute end to end).
 
-Not yet: a multi-worker run with dependencies and conflicts against real containers (covered by tests with the fake driver). The UI Approve click and "Let Orchestrator decide" in Spawn are done and verified (2026-11-11: Dot-35 picked a researcher on Haiku for a docs quest, spawned it with the commander's callsign and cap, reviewed and requested the merge).
+Verified 2026-11-12 with real containers: two Haiku workers on dependent quests; quest B stayed blocked until the commander merged quest A, was released automatically, and its tests (4 passing) were merged after a second approval. Not yet: a real merge conflict between parallel workers (covered by tests with the fake driver). The UI Approve click and "Let Orchestrator decide" in Spawn are done and verified (2026-11-11: Dot-35 picked a researcher on Haiku for a docs quest, spawned it with the commander's callsign and cap, reviewed and requested the merge).
 
 ### Phase 4 — Dev Supabase per project ✅ built 2026-11-11
 Spec: `docs/phase4.md`.
