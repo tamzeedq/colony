@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Alert, AlertKind } from '@/types/colony'
 import { ALERT_SEVERITY } from '@/design/status'
-import { useStore, mergeRequestForAlert } from '@/store/store'
+import { useStore, mergeRequestForAlert, reviewHref } from '@/store/store'
 import { ago, cx } from '@/lib/util'
 
 export const KIND: Record<AlertKind, { g: string; label: string; color: string; bar: string }> = {
@@ -79,6 +79,53 @@ export function useAlertAction() {
       case 'pause-noncritical': return thenResolve(dispatch({ type: 'pause', ids: state.agents.filter((a) => (a.role === 'researcher' || a.role === 'qa') && a.status !== 'paused').map((a) => a.id) }))
       default: return resolve()
     }
+  }
+}
+
+export type QuickAction = { id: string; label: string; primary?: boolean; confirm?: boolean }
+/** Toast id for "type a custom reply": opens the agent's Inspector. */
+export const REPLY_CUSTOM = 'reply-custom'
+
+/** The 1–3 most useful buttons for an alert in a toast (feedback #13), per kind. */
+export function quickActions(alert: Alert): QuickAction[] {
+  const own = alert.actions.filter((a) => a.id !== 'dismiss')
+  const find = (id: string) => own.find((a) => a.id === id)
+  switch (alert.kind) {
+    case 'approval': return [
+      { id: 'approve', label: find('approve')?.label ?? '✓ Approve & merge', primary: true, confirm: true },
+      { id: 'review', label: find('review')?.label ?? 'Open review' },
+    ]
+    case 'question': {
+      const replies = own.filter((a) => a.id.startsWith('reply:'))
+      const rest = replies.length ? replies.slice(0, 3) : own.slice(0, 2)
+      return [...rest.map((a) => ({ id: a.id, label: a.label, primary: a.primary })), ...(alert.agentId ? [{ id: REPLY_CUSTOM, label: 'Reply…' }] : [])]
+    }
+    case 'crash': {
+      const restart = own.find((a) => a.id.startsWith('restart') || a.id === 'resume') ?? own[0]
+      return [...(restart ? [{ id: restart.id, label: restart.label, primary: true }] : []), ...(alert.agentId ? [{ id: 'inspect', label: 'Inspect' }] : [])]
+    }
+    default: return own.slice(0, 2).map((a) => ({ id: a.id, label: a.label, primary: a.primary }))
+  }
+}
+
+/** Go to the thing that needs you: the review, the agent's Inspector, the quest, else the Inbox item. */
+export function useAlertOpen() {
+  const { state, dispatch, mode } = useStore()
+  const nav = useNavigate()
+  return (alert: Alert) => {
+    const agent = state.agents.find((a) => a.id === alert.agentId)
+    if (alert.kind === 'approval') {
+      const mr = mergeRequestForAlert(state, alert)
+      const quest = mr?.questId ? state.quests.find((q) => q.id === mr.questId)
+        : state.quests.find((q) => q.status === 'in_review' && q.assigneeId === alert.agentId)
+      const href = reviewHref(mode, mr, quest)
+      return nav(href ?? `/inbox#${alert.id}`)
+    }
+    if (alert.kind === 'question' && agent) return dispatch({ type: 'inspect', id: agent.id })
+    const questId = (alert as Alert & { questId?: string }).questId
+      ?? (alert.kind === 'loop' || alert.kind === 'crash' ? agent?.currentTaskId : undefined)
+    if (questId && state.quests.some((q) => q.id === questId)) return nav(`/quest/${questId}`)
+    nav(`/inbox#${alert.id}`)
   }
 }
 

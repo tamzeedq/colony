@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore, needsYou, toastAlert, alertToasts } from '@/store/store'
-import { useAlertAction } from './AlertItem'
+import { useAlertAction, useAlertOpen, quickActions, REPLY_CUSTOM } from './AlertItem'
 import { cx } from '@/lib/util'
 import { useAlertPrefs } from '@/lib/alertPrefs'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import type { AlertSeverity } from '@/types/colony'
+import type { Alert, AlertSeverity } from '@/types/colony'
 
 const BANNER: Record<AlertSeverity, { bg: string; lead: string }> = {
   critical: { bg: 'bg-st-error', lead: '✕' },
@@ -58,6 +58,7 @@ export function CriticalBanner() {
 export function ToastStack() {
   const { state, dispatch, mode } = useStore()
   const act = useAlertAction()
+  const open = useAlertOpen()
   const seen = useRef(new Set(state.alerts.map((a) => a.id)))
 
   // New unresolved alerts become toasts (per Settings → Alerts & sound). Live mode toasts from the stream instead.
@@ -84,10 +85,21 @@ export function ToastStack() {
   const toasts = state.ui.toasts.slice(-2)
   const extra = needsYou(state).length - toasts.filter((t) => t.alertId).length
   return (
-    <div className="pointer-events-none fixed right-4 top-20 z-[60] flex w-[300px] flex-col gap-2.5">
-      {toasts.map((t) => <ToastCard key={t.id} toast={t} onDone={() => dispatch({ type: 'dismissToast', id: t.id })}
-        onPrimary={() => { const a = state.alerts.find((x) => x.id === t.alertId); if (a) act(a, a.actions[0].id) }}
-        primaryLabel={state.alerts.find((x) => x.id === t.alertId)?.actions[0]?.label} />)}
+    <div className="pointer-events-none fixed right-4 top-20 z-[60] flex w-[320px] flex-col gap-2.5">
+      {toasts.map((t) => {
+        const alert = state.alerts.find((x) => x.id === t.alertId)
+        const done = () => dispatch({ type: 'dismissToast', id: t.id })
+        return (
+          <ToastCard key={t.id} toast={t} alert={alert} onDone={done}
+            onOpen={alert ? () => { open(alert); done() } : undefined}
+            onAction={(id) => {
+              if (!alert) return
+              if (id === REPLY_CUSTOM) { if (alert.agentId) dispatch({ type: 'inspect', id: alert.agentId }) }
+              else void act(alert, id)
+              done() // resolving actions also drop the toast in the reducer; navigation ones need this
+            }} />
+        )
+      })}
       {toasts.length > 0 && extra > 0 && (
         <Link to="/inbox" className="pointer-events-auto rounded-lg border border-line bg-raised px-3 py-2 text-xs text-ink-muted shadow-raised no-underline">+ {extra} more · open inbox</Link>
       )}
@@ -95,11 +107,17 @@ export function ToastStack() {
   )
 }
 
-function ToastCard({ toast, onDone, onPrimary, primaryLabel }: { toast: { id: string; title: string; tone: string }; onDone: () => void; onPrimary: () => void; primaryLabel?: string }) {
+function ToastCard({ toast, alert, onDone, onOpen, onAction }: {
+  toast: { id: string; title: string; tone: string }; alert?: Alert; onDone: () => void; onOpen?: () => void; onAction: (id: string) => void
+}) {
   const [paused, setPaused] = useState(false)
   const [left, setLeft] = useState(8000)
+  const [confirming, setConfirming] = useState<string>()
+  // Alerts that need you stay until handled or dismissed; other toasts drain.
+  const sticky = !!alert && !alert.resolvedAt && (alert.severity === 'needs_you' || alert.severity === 'critical')
+  const actions = alert ? quickActions(alert) : []
   useEffect(() => {
-    if (paused) return
+    if (paused || sticky) return
     const start = Date.now(), from = left
     const id = setInterval(() => {
       const l = from - (Date.now() - start)
@@ -108,25 +126,45 @@ function ToastCard({ toast, onDone, onPrimary, primaryLabel }: { toast: { id: st
     }, 100)
     return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paused])
+  }, [paused, sticky])
   const tone = toast.tone === 'critical' ? { b: 'border-st-error/60', t: 'text-st-error', bar: 'bg-st-error', label: '✕ Critical' }
     : toast.tone === 'done' ? { b: 'border-st-done/50', t: 'text-st-done', bar: 'bg-st-done', label: '✓ Done' }
     : toast.tone === 'error' ? { b: 'border-st-error/60', t: 'text-st-error', bar: 'bg-st-error', label: '✕ Didn’t go through' }
     : toast.tone === 'heads_up' ? { b: 'border-st-blocked/55', t: 'text-st-blocked', bar: 'bg-st-blocked', label: '▲ Heads-up' }
     : { b: 'border-st-you/55', t: 'text-st-you', bar: 'bg-st-you', label: '◆ Needs you' }
+  const fromButton = (e: { target: EventTarget }) => e.target instanceof Element && !!e.target.closest('button, a')
   return (
-    <div role="status" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
-      className={cx('pointer-events-auto animate-pop overflow-hidden rounded-lg border bg-raised shadow-raised', tone.b)}>
+    <div role="status" tabIndex={onOpen ? 0 : -1} aria-label={onOpen ? `${tone.label}: ${toast.title}. Enter opens, Escape dismisses.` : undefined}
+      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
+      onClick={(e) => { if (onOpen && !fromButton(e)) onOpen() }}
+      onKeyDown={(e) => {
+        if (fromButton(e) && e.key === 'Enter') return
+        if (e.key === 'Enter' && onOpen) { e.preventDefault(); onOpen() }
+        else if (e.key === 'Escape') { e.stopPropagation(); onDone() }
+      }}
+      className={cx('pointer-events-auto animate-pop overflow-hidden rounded-lg border bg-raised shadow-raised', tone.b, onOpen && 'cursor-pointer hover:border-line-strong')}>
       <div className="px-3 py-2.5">
         <div className={cx('text-[11px] font-bold uppercase tracking-[.08em]', tone.t)}>{tone.label}</div>
         <div className="mt-1 text-[13px] leading-snug">{toast.title}</div>
-        <div className="mt-2 flex gap-1.5">
-          {primaryLabel && <button type="button" onClick={onPrimary} className="rounded-sm bg-you px-2.5 py-1 text-xs font-semibold text-you-ink">{primaryLabel}</button>}
-          <button type="button" onClick={onDone} className="rounded-sm border border-line-strong px-2.5 py-1 text-xs">Dismiss</button>
-          <span className="ml-auto self-center font-mono text-[10px] text-ink-dim">G A</span>
+        {alert?.kind === 'approval' && alert.detail && <div className="mt-1 text-[11px] text-ink-muted">{alert.detail}</div>}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {actions.map((a, i) => {
+            const armed = confirming === a.id
+            const main = a.primary || (i === 0 && !actions.some((x) => x.primary))
+            return (
+              <button key={a.id} type="button"
+                onClick={() => { if (a.confirm && !armed) { setConfirming(a.id); return } onAction(a.id) }}
+                onBlur={() => { if (armed) setConfirming(undefined) }}
+                className={cx('rounded-sm px-2.5 py-1 text-xs', main ? 'bg-you font-semibold text-you-ink' : 'border border-line-strong text-ink')}>
+                {armed ? 'Confirm merge?' : a.label}
+              </button>
+            )
+          })}
+          <button type="button" onClick={onDone} className="rounded-sm px-1.5 py-1 text-xs text-ink-muted">Dismiss</button>
+          {onOpen && <span className="ml-auto font-mono text-[10px] text-ink-dim">↵ open</span>}
         </div>
       </div>
-      <div className="h-[3px] bg-line"><div className={cx('h-full', tone.bar)} style={{ width: `${Math.max(0, left / 80)}%` }} /></div>
+      {!sticky && <div className="h-[3px] bg-line"><div className={cx('h-full', tone.bar)} style={{ width: `${Math.max(0, left / 80)}%` }} /></div>}
     </div>
   )
 }

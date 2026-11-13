@@ -75,7 +75,16 @@ const Q = (q: Partial<Quest> & Pick<Quest, 'id' | 'projectId' | 'title' | 'statu
 export const quests: Quest[] = [
   Q({ id: 'q-mig', projectId: 'p-readable', title: 'Migration 0042 · reading_streaks', status: 'done', assigneeId: 'vex-07', xpReward: 80 }),
   Q({ id: 'q-api', projectId: 'p-readable', title: 'Reading streaks API', status: 'in_progress', assigneeId: 'vex-07', branch: 'feat/streaks-api', priority: 'high', dependsOn: ['q-mig'], xpReward: 200,
-    brief: "Store each reader's streak and expose it to the UI and the reminder job. Rollover must follow the reader's own time zone, not the server's.",
+    brief: [
+      "Goal: Store each reader's streak and expose it to the UI and the reminder job.",
+      '', '## What to build',
+      '- Migration `0042_streaks` with row-level security', '- `GET` / `POST /api/streaks`, validated with **zod**',
+      "- Rollover follows the reader's own time zone, not the server's",
+      '', 'Owns: `supabase/migrations/0042_streaks.sql`, `src/api/streaks.route.ts`, `src/lib/streaks.ts`',
+      '', '## Constraints', '- Never commit keys; read them from `.env.local`', "- Don't change how sessions persist",
+      '', '## Read first', '- `AGENTS.md` and `docs/api.md`',
+      '', '## Out of scope', '- The reminder email (Mira-12 owns it)', '- Streak badges in the UI',
+    ].join('\n'),
     why: 'Your goal asks for streaks with daily reminders by Friday. The email job and the UI both read from this API.',
     acceptance: [
       { text: 'Migration 0042 with row-level security', done: true }, { text: 'GET / POST /api/streaks with zod validation', done: true },
@@ -139,7 +148,7 @@ export const resources: Resources = {
 export const guards: Guards = { warnAtPct: 70, pauseWorkersAtPct: 90, orchestratorReservePct: 5, weeklyWarnAtPct: 70, paceForecast: true, autoDownshiftAtPct: 85, resumeAfterReset: false, teamCheckMinutes: 5 }
 
 export const mergeRequests: MergeRequest[] = [
-  { id: 'mr-48', projectId: 'p-readable', branch: 'feat/reading-streaks', prNumber: 48, requestedBy: 'kip-03', status: 'pending' },
+  { id: 'mr-48', projectId: 'p-readable', branch: 'feat/reading-streaks', prNumber: 48, requestedBy: 'kip-03', status: 'pending', questId: 'q-ui' },
 ]
 
 export const providers: ProviderView[] = [
