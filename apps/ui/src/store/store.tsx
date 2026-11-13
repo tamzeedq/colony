@@ -6,7 +6,7 @@
 // with useThrottledStream). `dispatch` applies an action locally (optimistic) and, in live mode,
 // calls the matching API (store/live.ts); failures toast and trigger a resync from /api/snapshot.
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
-import type { ActivityEvent, AlertSeverity, Guards, ID, Project, Snapshot, UiStreamMessage } from '@/types/colony'
+import type { ActivityEvent, AlertSeverity, Guards, ID, MergeRequest, Project, Snapshot, UiStreamMessage } from '@/types/colony'
 import { getAlertPrefs } from '@/lib/alertPrefs'
 import * as mock from '@/data/mock'
 import { reducer, emptyUi, DEFAULT_GUARDS, EMPTY_RESOURCES, builtinModels, type Action, type State, type Toast } from './reducer'
@@ -287,3 +287,15 @@ export const sessionShare = (s: State, p: Project) => projectAgents(s, p).reduce
 export const mergeRequestForAlert = (s: State, alert: { id: ID; projectId?: ID; agentId?: ID }) =>
   s.mergeRequests.find((m) => `al-${m.id}` === alert.id)
   ?? s.mergeRequests.find((m) => m.status === 'pending' && m.projectId === alert.projectId && (!alert.agentId || m.requestedBy === alert.agentId))
+/** A quest's merge request: linked by `questId` (else same PR number / branch), pending first, otherwise the latest. */
+export const mergeRequestForQuest = (s: State, q: { id: ID; projectId: ID; prNumber?: number; branch?: string }) => {
+  const mine = s.mergeRequests.filter((m) => m.questId === q.id)
+  const list = mine.length ? mine : s.mergeRequests.filter((m) => m.projectId === q.projectId && !m.questId
+    && ((q.prNumber !== undefined && m.prNumber === q.prNumber) || (!!q.branch && m.branch === q.branch)))
+  return list.find((m) => m.status === 'pending') ?? list[list.length - 1]
+}
+/** Where `/review/:id` should go: the merge request id live; mock review screens key on PR numbers. */
+export const reviewHref = (mode: Mode, mr?: MergeRequest, quest?: { prNumber?: number }) => {
+  const key = mode === 'mock' ? (mr?.prNumber ?? quest?.prNumber) : mr?.id
+  return key === undefined ? undefined : `/review/${key}`
+}

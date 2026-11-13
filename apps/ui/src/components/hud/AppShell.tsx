@@ -1,6 +1,8 @@
 import { NavLink, Outlet, Link } from 'react-router-dom'
 import { useStore, needsYou } from '@/store/store'
 import { Meter } from '@/components/ui/primitives'
+import { meterTone } from '@/design/status'
+import { TabBadge } from '@/components/alerts/TabBadge'
 import { Inspector } from '@/components/agent/Inspector'
 import { ToastStack, CriticalBanner } from '@/components/alerts/Toasts'
 import { AlertEffects } from '@/components/alerts/AlertEffects'
@@ -47,9 +49,36 @@ export function ResourceHud() {
       <Meter label="Spend today" pct={r.dailyCapUsd ? (r.spendTodayUsd / r.dailyCapUsd) * 100 : 0} value={usd(r.spendTodayUsd)} sub={`/ ${usd(r.dailyCapUsd).replace('.00', '')}`} neutral />
       <span className="hidden 2xl:contents">
         <Meter label="Containers" pct={r.containers.max ? (r.containers.running / r.containers.max) * 100 : 0} value={r.containers.running} sub={`/ ${r.containers.max}`} neutral />
-        <Meter label="Host" pct={r.host.cpuPct} value={`${Math.round(r.host.cpuPct)}%`} sub={`CPU · ${r.host.memTotalGb ? Math.round((r.host.memUsedGb / r.host.memTotalGb) * 100) : 0}% RAM`} neutral />
+        <HostMeter host={r.host} />
       </span>
     </>
+  )
+}
+
+/** Host CPU and RAM at equal weight, each with its own bar and warn / critical tone. */
+export function HostMeter({ host }: { host: { cpuPct: number; memUsedGb: number; memTotalGb: number; docker: string } }) {
+  const memPct = host.memTotalGb ? (host.memUsedGb / host.memTotalGb) * 100 : 0
+  const gb = (n: number) => n.toFixed(1)
+  const tip = `CPU ${Math.round(host.cpuPct)}% · RAM ${gb(host.memUsedGb)} / ${gb(host.memTotalGb)} GB (${Math.round(memPct)}%) · Docker ${host.docker}`
+  const part = (label: string, pct: number) => {
+    const t = meterTone(pct, 70, 90)
+    return (
+      <span className="flex min-w-[52px] flex-col gap-1" role="meter" aria-label={`Host ${label}`} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+        <span className="flex items-baseline gap-1">
+          <span className="text-[11px] text-ink-dim">{label}</span>
+          <span className={cx('text-numeral text-[16px]', t.text)}>{t.prefix}{Math.round(pct)}%</span>
+        </span>
+        <span className="h-1 overflow-hidden rounded-full bg-line-soft">
+          <span className={cx('block h-full transition-[width] duration-[240ms] ease-standard', t.bar)} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+        </span>
+      </span>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1" title={tip}>
+      <span className="text-label">Host</span>
+      <span className="flex gap-3">{part('CPU', host.cpuPct)}{part('RAM', memPct)}</span>
+    </div>
   )
 }
 
@@ -93,6 +122,7 @@ export function AppShell() {
       <Inspector docked={ultra} />
       <ToastStack />
       <AlertEffects />
+      <TabBadge />
       <ShortcutOverlay />
       <CommandPalette />
     </div>
