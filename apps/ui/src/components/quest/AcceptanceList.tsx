@@ -60,7 +60,9 @@ export function AcceptanceList({ quest }: { quest: Quest }) {
                     ? <span className={cx('rounded-full border px-1.5', c.done ? 'border-st-done/40 text-st-done' : 'border-st-you/50 text-st-you')}>{c.done ? `✓ checked by ${who(v?.by ?? 'you')}` : '! Needs you'}</span>
                     : v
                       ? <span className={cx('rounded-full border px-1.5', failed ? 'border-st-error/50 text-st-error' : 'border-st-done/40 text-st-done')}>{failed ? '✕ failed' : '✓ passed'} · {who(v.by)}</span>
-                      : <span className="rounded-full border border-line px-1.5 text-ink-dim">QA agent · not verified yet</span>}
+                      : c.done
+                        ? <span className="rounded-full border border-st-done/40 px-1.5 text-st-done">✓ done</span>
+                        : <span className="rounded-full border border-line px-1.5 text-ink-dim">QA agent · not verified yet</span>}
                   {c.claimed && !v && <span className="text-ink-dim">worker says done</span>}
                   {v?.evidence && <span className="truncate font-mono text-ink-dim" title={v.evidence}>{v.evidence}</span>}
                 </span>
