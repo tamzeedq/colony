@@ -184,6 +184,20 @@ export interface Agent {
 
 export type QuestStatus = 'backlog' | 'in_progress' | 'in_review' | 'done' | 'failed' | 'blocked'
 
+/** Who can check an acceptance criterion: an agent (tests, lint, scripted checks) or only the commander. */
+export type AcceptanceCheck = 'agent' | 'human'
+
+export interface AcceptanceItem {
+  text: string
+  /** Satisfied: verified as passing (by a QA agent or the commander), or the quest was merged. */
+  done: boolean
+  /** Default 'agent'. 'human' items wait for the commander ("Needs you"). */
+  check?: AcceptanceCheck
+  /** The worker reported it met this (report_progress); not a verification. */
+  claimed?: boolean
+  verification?: { by: ID | 'you'; result: 'pass' | 'fail'; evidence?: string; at: ISODate }
+}
+
 export interface Quest {
   id: ID
   projectId: ID
@@ -197,7 +211,9 @@ export interface Quest {
   branch?: string
   prNumber?: number
   dependsOn: ID[]
-  acceptance: { text: string; done: boolean }[]
+  acceptance: AcceptanceItem[]
+  /** QA agent asked to verify the agent-checkable criteria (request_verification). */
+  verifierId?: ID
   xpReward: number
   createdAt: ISODate
 }
@@ -276,6 +292,8 @@ export interface Guards {
   paceForecast: boolean
   autoDownshiftAtPct?: number // e.g. 85 → workers to haiku-5.5
   resumeAfterReset: boolean
+  /** Minutes between "[Colony] Team check" digests to orchestrators while workers are busy (0 = off). */
+  teamCheckMinutes: number
 }
 
 /** Projected minutes until the session window is exhausted at the current rate. */

@@ -52,7 +52,7 @@ export type Action =
   | { type: 'setProviders'; providers: ProviderView[] }
   | { type: 'upsertProvider'; provider: ProviderView }
 
-export const DEFAULT_GUARDS: Guards = { warnAtPct: 70, pauseWorkersAtPct: 90, orchestratorReservePct: 5, weeklyWarnAtPct: 70, paceForecast: true, autoDownshiftAtPct: 85, resumeAfterReset: false }
+export const DEFAULT_GUARDS: Guards = { warnAtPct: 70, pauseWorkersAtPct: 90, orchestratorReservePct: 5, weeklyWarnAtPct: 70, paceForecast: true, autoDownshiftAtPct: 85, resumeAfterReset: false, teamCheckMinutes: 5 }
 
 /** Placeholder until the first snapshot arrives (the app shows "Connecting…" meanwhile). */
 export const EMPTY_RESOURCES: Resources = {

@@ -34,6 +34,10 @@ export const endpoints = {
   requestWorker: (projectId: ID, input: { callsign?: string; budgetCapUsd?: number; task?: string }) =>
     api<{ orchestratorId: ID; orchestrator: string; delivered: boolean }>('POST', `/api/projects/${enc(projectId)}/worker-requests`, input),
   agentCommits: (id: ID) => api<AgentCommits>('GET', `${a(id)}/commits`),
+  /** Feedback #8: send the orchestrator a team check-in now. */
+  teamCheck: (projectId: ID) => api<{ sent: boolean; reason?: string }>('POST', `/api/projects/${enc(projectId)}/team-check`),
+  /** Feedback #11: the commander ticks or unticks an acceptance criterion. */
+  questAcceptance: (questId: ID, index: number, done: boolean) => api<Quest>('POST', `/api/quests/${enc(questId)}/acceptance/${index}`, { done }),
   checkpoint: (id: ID, label?: string) => api('POST', `${a(id)}/checkpoints`, label ? { label } : {}),
   revert: (id: ID, input: { to: string; force?: boolean }) => api<RevertResult>('POST', `${a(id)}/revert`, input),
 

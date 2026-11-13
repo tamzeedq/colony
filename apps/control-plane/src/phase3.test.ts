@@ -209,7 +209,9 @@ describe('quest flow: plan → staff → complete → review → merge', () => {
     c.infra.setBranch(slugOf(c, p.id), worker.agent.branch!, { aheadOfMain: 2, diff: 'diff --git a/db/streaks.sql b/db/streaks.sql\n+create table streaks();\n' })
     const prog = await call(c, worker, 'report_progress', { text: 'Migration written', quest_id: q1, acceptance_done: [0] })
     assert.equal(prog.isError, false)
-    assert.equal(c.app.store.quests.get(q1)!.acceptance[0].done, true)
+    // A worker's report is a claim; verification comes from QA or the commander (feedback #11).
+    assert.equal(c.app.store.quests.get(q1)!.acceptance[0].claimed, true)
+    assert.equal(c.app.store.quests.get(q1)!.acceptance[0].done, false)
     const done = await call(c, worker, 'complete_task', { quest_id: q1, summary: 'Added the streaks table; tests pass' })
     assert.equal(done.isError, false, done.text)
     assert.equal(c.app.store.quests.get(q1)!.status, 'in_review')
@@ -222,6 +224,23 @@ describe('quest flow: plan → staff → complete → review → merge', () => {
     const rev = await call(c, orch, 'review_branch', { quest_id: q1 })
     assert.match(rev.text, /2 commit\(s\) ahead/)
     assert.match(rev.text, /create table streaks/)
+    // Unverified agent-checkable criteria block the merge request…
+    const blocked = await call(c, orch, 'request_merge', { quest_id: q1, summary: 'too early' })
+    assert.ok(blocked.isError && /request_verification/.test(blocked.text), blocked.text)
+    // …so a QA worker verifies them first.
+    const qaSpawn = await call(c, orch, 'spawn_agent', { role: 'qa', model: 'haiku-5.5' })
+    const qa = await connect(c, qaSpawn.json.agent.id)
+    const self = await call(c, orch, 'request_verification', { quest_id: q1, agent_id: worker.agent.id })
+    assert.ok(self.isError && /another worker/.test(self.text))
+    const rv = await call(c, orch, 'request_verification', { quest_id: q1, agent_id: qa.agent.callsign })
+    assert.equal(rv.isError, false, rv.text)
+    await waitUntil(() => qa.runner.texts().some((t) => t.includes('Verification request') && t.includes(q1)))
+    const notMine = await call(c, worker, 'verify_acceptance', { quest_id: q1, index: 0, result: 'pass', evidence: 'trust me' })
+    assert.ok(notMine.isError && /not the verifier/.test(notMine.text))
+    await call(c, qa, 'verify_acceptance', { quest_id: q1, index: 0, result: 'pass', evidence: 'supabase db push: applied' })
+    await call(c, qa, 'verify_acceptance', { quest_id: q1, index: 1, result: 'pass', evidence: 'npm test: 12 passed' })
+    assert.ok(c.app.store.quests.get(q1)!.acceptance.every((a) => a.done && a.verification?.by === qa.agent.id))
+    await waitUntil(() => orch.runner.texts().some((t) => t.includes('verified quest') && t.includes('request_merge now')))
     const mr1 = await call(c, orch, 'request_merge', { quest_id: q1, summary: 'Streaks table. Verified: npm test.' })
     assert.equal(mr1.isError, false, mr1.text)
     const mr = mr1.json.mergeRequest
@@ -251,14 +270,15 @@ describe('quest flow: plan → staff → complete → review → merge', () => {
     const slug = slugOf(c, p.id)
     c.infra.setBranch(slug, worker.agent.branch!, { aheadOfMain: 1 })
     await call(c, worker, 'complete_task', { quest_id: q2, summary: 'API done' })
-    const mr = (await call(c, orch, 'request_merge', { quest_id: q2, summary: 'API' })).json.mergeRequest
+    const mr = (await call(c, orch, 'request_merge', { quest_id: q2, summary: 'API', unverified_reason: 'no QA worker in this test' })).json.mergeRequest
+    assert.match(mr.summary, /Unverified \(1\): no QA worker in this test/)
     await api(c, 'POST', `/api/merge-requests/${mr.id}/request-changes`, { note: 'Add pagination' })
     assert.equal(c.app.store.quests.get(q2)!.status, 'in_progress')
     await waitUntil(() => worker.runner.texts().some((t) => t.includes('Add pagination')))
 
     c.infra.setBranch(slug, worker.agent.branch!, { aheadOfMain: 1, conflict: true })
     await call(c, worker, 'complete_task', { quest_id: q2, summary: 'pagination added' })
-    const mr2 = (await call(c, orch, 'request_merge', { quest_id: q2, summary: 'API v2' })).json.mergeRequest
+    const mr2 = (await call(c, orch, 'request_merge', { quest_id: q2, summary: 'API v2', unverified_reason: 'no QA worker in this test' })).json.mergeRequest
     assert.equal((await api(c, 'POST', `/api/merge-requests/${mr2.id}/approve`)).status, 409)
     await waitUntil(() => orch.runner.texts().some((t) => /conflict/.test(t) && /fix quest/.test(t)))
   })

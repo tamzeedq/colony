@@ -136,7 +136,7 @@ export const resources: Resources = {
   host: { cpuPct: 46, memUsedGb: 21.3, memTotalGb: 32, docker: 'running' },
 }
 
-export const guards: Guards = { warnAtPct: 70, pauseWorkersAtPct: 90, orchestratorReservePct: 5, weeklyWarnAtPct: 70, paceForecast: true, autoDownshiftAtPct: 85, resumeAfterReset: false }
+export const guards: Guards = { warnAtPct: 70, pauseWorkersAtPct: 90, orchestratorReservePct: 5, weeklyWarnAtPct: 70, paceForecast: true, autoDownshiftAtPct: 85, resumeAfterReset: false, teamCheckMinutes: 5 }
 
 export const mergeRequests: MergeRequest[] = [
   { id: 'mr-48', projectId: 'p-readable', branch: 'feat/reading-streaks', prNumber: 48, requestedBy: 'kip-03', status: 'pending' },

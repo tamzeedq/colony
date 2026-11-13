@@ -2,7 +2,7 @@
 // `[Colony]` notifications that keep the orchestrator informed. Used by both the MCP tools
 // (agents) and the REST routes (the commander).
 
-import type { Agent, MergeRequest, Quest, QuestStatus } from '@colony/shared'
+import type { AcceptanceCheck, AcceptanceItem, Agent, MergeRequest, Quest, QuestStatus } from '@colony/shared'
 import type { AgentManager } from './agents'
 import { badRequest, conflict, infraError, notFound } from './errors'
 import type { InfraDriver } from './infra/types'
@@ -12,11 +12,14 @@ export const QUEST_STATUSES = ['backlog', 'in_progress', 'in_review', 'done', 'f
 const PRIORITIES = ['low', 'normal', 'high'] as const
 type Priority = (typeof PRIORITIES)[number]
 
+/** An acceptance criterion as given by the orchestrator or commander: text, optionally who checks it. */
+export type AcceptanceInput = string | { text: string; check?: AcceptanceCheck }
+
 export interface QuestInput {
   title: string
   brief?: string
   why?: string
-  acceptance?: string[]
+  acceptance?: AcceptanceInput[]
   priority?: Priority
   dependsOn?: string[]
 }
@@ -25,11 +28,23 @@ export interface QuestPatch {
   title?: string
   brief?: string
   why?: string
-  acceptance?: string[]
+  acceptance?: AcceptanceInput[]
   priority?: Priority
   dependsOn?: string[]
   status?: QuestStatus
 }
+
+/** "[human] text" / "[agent] text" prefixes are accepted as a shorthand for `check`. */
+export function toAcceptance(input: AcceptanceInput): { text: string; check: AcceptanceCheck } {
+  const raw = typeof input === 'string' ? { text: input } : input
+  let text = raw.text.trim()
+  let check: AcceptanceCheck = raw.check === 'human' ? 'human' : 'agent'
+  const m = /^\[(human|agent)\]\s*/i.exec(text)
+  if (m) { if (typeof input === 'string' || !raw.check) check = m[1].toLowerCase() as AcceptanceCheck; text = text.slice(m[0].length) }
+  return { text, check }
+}
+
+const isAgentCheck = (a: AcceptanceItem) => (a.check ?? 'agent') === 'agent'
 
 const XP_BY_PRIORITY: Record<Priority, number> = { low: 60, normal: 100, high: 150 }
 
@@ -100,7 +115,7 @@ export class QuestService {
       id: newId('q'), projectId, title: input.title, brief: input.brief ?? '',
       ...(input.why ? { why: input.why } : {}),
       status: 'backlog', priority, createdBy, dependsOn: deps,
-      acceptance: (input.acceptance ?? []).map((text) => ({ text, done: false })),
+      acceptance: (input.acceptance ?? []).map((x) => ({ ...toAcceptance(x), done: false })),
       xpReward: XP_BY_PRIORITY[priority], createdAt: nowIso(),
     }
     this.store.saveQuest(q)
@@ -141,8 +156,13 @@ export class QuestService {
     if (input.why !== undefined) next.why = input.why
     if (input.priority !== undefined) { next.priority = input.priority; next.xpReward = XP_BY_PRIORITY[input.priority] }
     if (input.acceptance !== undefined) {
-      const old = new Map(q.acceptance.map((a) => [a.text, a.done]))
-      next.acceptance = input.acceptance.map((text) => ({ text, done: old.get(text) ?? false }))
+      // Keep verification state for criteria whose text is unchanged.
+      const old = new Map(q.acceptance.map((a) => [a.text, a]))
+      next.acceptance = input.acceptance.map((x) => {
+        const n = toAcceptance(x)
+        const prev = old.get(n.text)
+        return prev && (prev.check ?? 'agent') === n.check ? prev : { ...n, done: false }
+      })
     }
     if (input.dependsOn !== undefined) next.dependsOn = this.checkDeps(q.projectId, input.dependsOn, q.id)
     const statusChanged = input.status !== undefined && input.status !== q.status
@@ -192,7 +212,10 @@ export class QuestService {
       '',
       q.brief || '(no brief)',
     ]
-    if (q.acceptance.length) lines.push('', 'Acceptance criteria:', ...q.acceptance.map((a, i) => `${i}. ${a.text}`))
+    if (q.acceptance.length) {
+      lines.push('', 'Acceptance criteria:', ...q.acceptance.map((a, i) => `${i}. ${a.text}${isAgentCheck(a) ? '' : ' (the commander checks this one)'}`))
+      lines.push('A QA agent will verify the agent-checkable criteria on your branch before review, so make them pass and say how to check them in your complete_task summary.')
+    }
     if (q.dependsOn.length) lines.push('', `Builds on: ${q.dependsOn.map((d) => `${d} "${this.store.quests.get(d)?.title ?? '?'}"`).join(', ')} (merged to main; start from the latest main).`)
     lines.push('', `Work on your branch ${rec.agent.branch ?? ''}, push it, then call complete_task with quest_id "${q.id}" and a short summary.`)
     this.agents.deliver(rec.agent.id, lines.join('\n'))
@@ -252,7 +275,8 @@ export class QuestService {
     if (questId) {
       q = this.inProject(questId, rec.agent.projectId)
       if (acceptanceDone?.length) {
-        const acceptance = q.acceptance.map((a, i) => (acceptanceDone.includes(i) ? { ...a, done: true } : a))
+        // A worker's own report is a claim, not a verification (QA or the commander verifies).
+        const acceptance = q.acceptance.map((a, i) => (acceptanceDone.includes(i) ? { ...a, claimed: true } : a))
         q = { ...q, acceptance }
         this.store.saveQuest(q)
       }
@@ -260,6 +284,95 @@ export class QuestService {
     this.store.addEvent({ id: newId('ev'), at: nowIso(), agentId: rec.agent.id, projectId: rec.agent.projectId, kind: 'status', text })
     if (q) this.store.broadcastSnapshot()
     return q
+  }
+
+  // ── acceptance verification (feedback #11) ──────────────────────────────────
+
+  /** Agent-checkable criteria not yet verified as passing, with their indices. */
+  unverified(q: Quest): { index: number; text: string; failed: boolean }[] {
+    return q.acceptance.flatMap((a, index) => (isAgentCheck(a) && !(a.verification?.result === 'pass')
+      ? [{ index, text: a.text, failed: a.verification?.result === 'fail' }] : []))
+  }
+
+  /** Orchestrator asks a QA worker to verify a completed quest's agent-checkable criteria. */
+  requestVerification(questId: string, verifierId: string, projectId: string) {
+    const q = this.inProject(questId, projectId)
+    if (q.status !== 'in_review') throw conflict(`quest ${q.id} is ${q.status}; verification is for completed quests (in_review)`)
+    const v = this.store.agents.get(verifierId)
+    if (!v || v.agent.projectId !== projectId) throw notFound('agent')
+    if (v.agent.role === 'orchestrator') throw badRequest('pick a worker (ideally a qa agent) to verify, not the orchestrator')
+    if (v.agent.id === q.assigneeId) throw badRequest(`${v.agent.callsign} wrote this quest; another worker should verify it`)
+    const items = q.acceptance.map((a, i) => ({ a, i })).filter(({ a }) => isAgentCheck(a))
+    if (!items.length) throw conflict(`quest ${q.id} has no agent-checkable criteria; the commander verifies it in review`)
+    const next: Quest = {
+      ...q, verifierId: v.agent.id,
+      // A fresh verification round: earlier results no longer count.
+      acceptance: q.acceptance.map((a) => (isAgentCheck(a) ? { ...a, done: false, verification: undefined } : a)),
+    }
+    this.store.saveQuest(next)
+    const author = q.assigneeId ? this.store.agents.get(q.assigneeId)?.agent.callsign : undefined
+    this.agents.deliver(v.agent.id, [
+      `[Colony] Verification request: quest ${q.id} "${q.title}"${author ? ` by ${author}` : ''}, branch ${q.branch ?? '?'}.`,
+      '',
+      `Check out that branch in your workspace (git fetch origin && git checkout -B verify-${q.id} origin/${q.branch ?? ''}) and verify each criterion below by actually running the checks (tests, typecheck, lint, scripts, grep, a headless browser run). Do not fix the code: you are verifying, not implementing.`,
+      'For EACH criterion call verify_acceptance with quest_id, index, result ("pass" or "fail") and short evidence (the command you ran and what it showed).',
+      '',
+      ...items.map(({ a, i }) => `${i}. ${a.text}`),
+      '',
+      'Criteria marked for the commander are not yours to check. When you have verified all of the above, reply with a one-line summary.',
+    ].join('\n'))
+    this.store.patchAgent(v.agent.id, { currentTaskId: q.id })
+    this.store.addEvent({
+      id: newId('ev'), at: nowIso(), agentId: v.agent.id, projectId, kind: 'handoff',
+      text: `Verify quest "${q.title}" (${items.length} criteria)`, message: { to: v.agent.id, body: `verify ${q.id}` },
+    })
+    this.store.broadcastSnapshot()
+    return { quest: next, verifier: v.agent.callsign, criteria: items.length }
+  }
+
+  /** Record a verification result: the assigned QA verifier (or orchestrator) for agent criteria. */
+  verify(questId: string, index: number, result: 'pass' | 'fail', evidence: string, by: AgentRecord) {
+    const q = this.inProject(questId, by.agent.projectId)
+    const a = q.acceptance[index]
+    if (!a) throw badRequest(`quest ${q.id} has no criterion ${index} (0–${q.acceptance.length - 1})`)
+    if (!isAgentCheck(a)) throw conflict(`criterion ${index} is for the commander to check, not an agent`)
+    const isVerifier = q.verifierId === by.agent.id
+    if (!isVerifier && by.agent.role !== 'orchestrator') throw conflict(`you are not the verifier for quest ${q.id}`)
+    const acceptance = q.acceptance.map((x, i) => (i === index
+      ? { ...x, done: result === 'pass', verification: { by: by.agent.id, result, evidence: evidence.slice(0, 2000), at: nowIso() } }
+      : x))
+    const next: Quest = { ...q, acceptance }
+    this.store.saveQuest(next)
+    this.store.addEvent({
+      id: newId('ev'), at: nowIso(), agentId: by.agent.id, projectId: q.projectId, kind: 'test',
+      text: `${result === 'pass' ? '✓' : '✕'} ${q.title} · criterion ${index}: ${a.text}${evidence ? ` — ${evidence.slice(0, 200)}` : ''}`,
+      test: { passed: result === 'pass' ? 1 : 0, failed: result === 'fail' ? 1 : 0, running: 0 },
+    })
+    // All agent criteria have a result: tell the orchestrator once.
+    const agentItems = acceptance.filter(isAgentCheck)
+    if (agentItems.every((x) => x.verification)) {
+      const failed = acceptance.map((x, i) => ({ x, i })).filter(({ x }) => isAgentCheck(x) && x.verification?.result === 'fail')
+      const humans = acceptance.filter((x) => !isAgentCheck(x)).length
+      this.notifyOrchestrator(q.projectId, failed.length
+        ? `${by.agent.callsign} verified quest ${q.id} "${q.title}": ${failed.length} criteria FAILED (${failed.map(({ x, i }) => `${i}. ${x.text}: ${x.verification?.evidence ?? ''}`).join('; ')}). Send it back to the worker with message_agent, then request verification again once fixed.`
+        : `${by.agent.callsign} verified quest ${q.id} "${q.title}": all ${agentItems.length} agent-checkable criteria pass.${humans ? ` ${humans} criteria are for the commander to check in review.` : ''} You can request_merge now.`)
+    }
+    this.store.broadcastSnapshot()
+    return next
+  }
+
+  /** The commander ticks (or unticks) a criterion. Works for any criterion; marks it verified by you. */
+  commanderCheck(questId: string, index: number, done: boolean) {
+    const q = this.get(questId)
+    const a = q.acceptance[index]
+    if (!a) throw badRequest(`quest ${q.id} has no criterion ${index}`)
+    const acceptance = q.acceptance.map((x, i) => (i === index
+      ? (done ? { ...x, done: true, verification: { by: 'you' as const, result: 'pass' as const, at: nowIso() } } : { ...x, done: false, verification: undefined })
+      : x))
+    const next: Quest = { ...q, acceptance }
+    this.store.saveQuest(next)
+    this.store.broadcastSnapshot()
+    return next
   }
 
   // ── merge outcomes (called by MergeService) ─────────────────────────────────

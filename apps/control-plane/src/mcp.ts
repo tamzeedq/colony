@@ -9,7 +9,7 @@ import { HttpError } from './errors'
 import type { SupabaseService } from './supabase'
 import type { InfraDriver } from './infra/types'
 import type { MergeService } from './projects'
-import { isPriority, isQuestStatus, type QuestService } from './quests'
+import { isPriority, isQuestStatus, type AcceptanceInput, type QuestService } from './quests'
 import { newId, nowIso, type AgentRecord, type Store } from './store'
 
 export interface McpDeps {
@@ -58,6 +58,28 @@ function list(a: Args, k: string, max = 50): string[] | undefined {
   if (v.length > max) throw new ToolError(`'${k}' has more than ${max} items`)
   return (v as string[]).map((x) => x.trim()).filter(Boolean)
 }
+/** Acceptance criteria: strings ("[human] …" allowed) or { text, check: 'agent' | 'human' }. */
+function acceptanceList(a: Args, k: string, max = 20): AcceptanceInput[] | undefined {
+  const v = a[k]
+  if (v === undefined || v === null) return undefined
+  if (!Array.isArray(v)) throw new ToolError(`'${k}' must be an array`)
+  if (v.length > max) throw new ToolError(`'${k}' has more than ${max} items`)
+  return v.map((x, i) => {
+    if (typeof x === 'string') return x
+    if (x && typeof x === 'object' && typeof (x as { text?: unknown }).text === 'string') {
+      const check = (x as { check?: unknown }).check
+      if (check !== undefined && check !== 'agent' && check !== 'human') throw new ToolError(`'${k}[${i}].check' must be "agent" or "human"`)
+      return { text: (x as { text: string }).text, ...(check ? { check: check as 'agent' | 'human' } : {}) }
+    }
+    throw new ToolError(`'${k}[${i}]' must be a string or { text, check }`)
+  }).filter((x) => (typeof x === 'string' ? x.trim() : x.text.trim()))
+}
+const acceptanceSchema = {
+  type: 'array',
+  description: 'Objectively checkable criteria. Mark each with who can check it: check "agent" (a QA agent can verify it by running tests, typecheck, lint, a script, grep or a headless browser) or check "human" (needs the commander: visual/UX judgement, real accounts or devices, anything with no automatable check).',
+  items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { text: { type: 'string' }, check: { type: 'string', enum: ['agent', 'human'] } }, required: ['text'] }] },
+}
+
 function n(a: Args, k: string, min = 0): number | undefined {
   const v = a[k]
   if (v === undefined || v === null) return undefined
@@ -78,7 +100,12 @@ function questView(q: Quest, store: Store) {
     id: q.id, title: q.title, status: q.status, priority: q.priority,
     assignee: q.assigneeId ? store.agents.get(q.assigneeId)?.agent.callsign ?? q.assigneeId : null,
     assigneeId: q.assigneeId ?? null, branch: q.branch ?? null, dependsOn: q.dependsOn,
-    acceptance: q.acceptance.map((x, i) => `${i}. [${x.done ? 'x' : ' '}] ${x.text}`),
+    acceptance: q.acceptance.map((x, i) => {
+      const v = x.verification
+      const state = v ? `${v.result === 'pass' ? 'PASS' : 'FAIL'} by ${v.by === 'you' ? 'the commander' : store.agents.get(v.by)?.agent.callsign ?? v.by}` : x.claimed ? 'claimed by worker, not verified' : 'not verified'
+      return `${i}. [${x.done ? 'x' : ' '}] ${x.text} (${(x.check ?? 'agent') === 'human' ? 'commander checks' : 'agent-checkable'}; ${state})`
+    }),
+    verifier: q.verifierId ? store.agents.get(q.verifierId)?.agent.callsign ?? q.verifierId : null,
     brief: q.brief,
   }
 }
@@ -130,8 +157,8 @@ export function buildTools(d: McpDeps): Tool[] {
       name: 'create_task', roles: 'orchestrator',
       description: 'Create a quest: a small, verifiable unit of work for one worker. Returns the quest id.',
       inputSchema: obj({
-        title: str, brief: { type: 'string', description: 'What and why, plus the files/directories the worker owns.' },
-        acceptance: { ...strArr, description: 'Objectively checkable criteria.' },
+        title: str, brief: { type: 'string', description: 'Structured Markdown, scannable in seconds: "Goal: <one line>", then short bullet sections "## What to build", "## Owns" (files/dirs), "## Constraints", "## Read first", "## Out of scope". No long paragraphs.' },
+        acceptance: acceptanceSchema,
         priority: { type: 'string', enum: ['low', 'normal', 'high'] },
         depends_on: { ...strArr, description: 'Quest ids that must be done (merged) first.' },
         why: { type: 'string', description: 'Your reasoning, e.g. why this model or ordering.' },
@@ -140,7 +167,7 @@ export function buildTools(d: McpDeps): Tool[] {
         const priority = a.priority === undefined ? undefined : isPriority(a.priority) ? a.priority : (() => { throw new ToolError("'priority' must be low, normal or high") })()
         const q = quests.create(me.agent.projectId, {
           title: s(a, 'title', true, 200), brief: s(a, 'brief', true), why: s(a, 'why', false, 4000),
-          acceptance: list(a, 'acceptance', 20), priority, dependsOn: list(a, 'depends_on'),
+          acceptance: acceptanceList(a, 'acceptance'), priority, dependsOn: list(a, 'depends_on'),
         }, me.agent.id)
         return questView(q, store)
       },
@@ -149,7 +176,7 @@ export function buildTools(d: McpDeps): Tool[] {
       name: 'update_task', roles: 'orchestrator',
       description: "Edit a quest. Status may be set to backlog, failed (cancel) or done (only for quests that need no merge, such as research).",
       inputSchema: obj({
-        quest_id: str, title: str, brief: str, acceptance: strArr, depends_on: strArr, why: str,
+        quest_id: str, title: str, brief: str, acceptance: acceptanceSchema, depends_on: strArr, why: str,
         priority: { type: 'string', enum: ['low', 'normal', 'high'] },
         status: { type: 'string', enum: ['backlog', 'failed', 'done'] },
       }, ['quest_id']),
@@ -159,7 +186,7 @@ export function buildTools(d: McpDeps): Tool[] {
         if (a.priority !== undefined && !isPriority(a.priority)) throw new ToolError("'priority' must be low, normal or high")
         const q = quests.patch(s(a, 'quest_id', true), {
           title: s(a, 'title', false, 200), brief: s(a, 'brief'), why: s(a, 'why', false, 4000),
-          acceptance: list(a, 'acceptance', 20), dependsOn: list(a, 'depends_on'),
+          acceptance: acceptanceList(a, 'acceptance'), dependsOn: list(a, 'depends_on'),
           priority: a.priority as 'low' | 'normal' | 'high' | undefined, status: status as Quest['status'] | undefined,
         }, me, me.agent.projectId)
         return questView(q, store)
@@ -265,9 +292,21 @@ export function buildTools(d: McpDeps): Tool[] {
         quest_id: str,
         summary: { type: 'string', description: 'A few lines: what it does, which quest it closes, how you verified it, anything risky.' },
         branch: { type: 'string', description: "Defaults to the quest's branch." },
+        unverified_reason: { type: 'string', description: 'Only if agent-checkable criteria could not be verified: why. Shown to the commander.' },
       }, ['quest_id', 'summary']),
       run: async (a, me) => {
         const q = quests.inProject(s(a, 'quest_id', true), me.agent.projectId)
+        // Feedback #11: agent-checkable criteria are verified by a QA agent before the commander sees the merge.
+        const open = quests.unverified(q)
+        const reason = s(a, 'unverified_reason', false, 1000)
+        if (open.length && !reason) {
+          throw new ToolError(`quest ${q.id} has ${open.length} agent-checkable criteria not verified as passing: ${open.map((o) => `${o.index}. ${o.text}${o.failed ? ' (FAILED)' : ''}`).join('; ')}. Use request_verification with a qa worker first (spawn one on haiku if needed). If they truly cannot be verified, pass unverified_reason.`)
+        }
+        const humanItems = q.acceptance.filter((x) => x.check === 'human' && !x.done).length
+        const extra = [
+          open.length ? `Unverified (${open.length}): ${reason}` : '',
+          humanItems ? `Needs you: ${humanItems} criteria for the commander to check.` : '',
+        ].filter(Boolean).join('\n')
         const branch = s(a, 'branch', false, 200) ?? q.branch
         if (!branch || branch === 'main') throw new ToolError('the quest has no branch yet; pass branch')
         const info = (await infra.listBranches(slug(me))).find((b) => b.name === branch)
@@ -275,8 +314,19 @@ export function buildTools(d: McpDeps): Tool[] {
         if (info.aheadOfMain === 0) throw new ToolError(`branch ${branch} has nothing ahead of main`)
         const existing = [...store.mergeRequests.values()].find((m) => m.projectId === me.agent.projectId && m.branch === branch && m.status === 'pending')
         if (existing) return { mergeRequest: existing, note: 'A merge request for this branch is already waiting for the commander.' }
-        const mr = merges.create({ projectId: me.agent.projectId, branch, requestedBy: me.agent.id, questId: q.id, summary: s(a, 'summary', true, 4000) })
+        const summary = s(a, 'summary', true, 4000)!
+        const mr = merges.create({ projectId: me.agent.projectId, branch, requestedBy: me.agent.id, questId: q.id, summary: extra ? `${summary}\n${extra}` : summary })
         return { mergeRequest: mr, note: 'The commander has been asked to approve. You will be told when it is merged or sent back.' }
+      },
+    },
+    {
+      name: 'request_verification', roles: 'orchestrator',
+      description: "After a worker completes a quest, ask a QA worker (not the author) to verify its agent-checkable acceptance criteria on the branch. Spawn a qa worker on haiku first if none is free. You are told when verification finishes; request_merge requires it.",
+      inputSchema: obj({ quest_id: str, agent_id: { type: 'string', description: 'The QA worker (id or callsign).' } }, ['quest_id', 'agent_id']),
+      run: (a, me) => {
+        const v = peer(s(a, 'agent_id', true)!, me)
+        const r = quests.requestVerification(s(a, 'quest_id', true)!, v.agent.id, me.agent.projectId)
+        return { quest: questView(r.quest, store), verifier: r.verifier, criteria: r.criteria }
       },
     },
     {
@@ -317,6 +367,22 @@ export function buildTools(d: McpDeps): Tool[] {
         const ts = await supabase.genTypes(me.agent.projectId)
         const max = 200 * 1024
         return ts.length > max ? `${ts.slice(0, max)}\n// … clipped at 200 KB` : ts
+      },
+    },
+    {
+      name: 'verify_acceptance', roles: 'all',
+      description: 'Record the result of verifying one acceptance criterion of a quest you were asked to verify: result "pass" or "fail", with short evidence (the command you ran and what it showed).',
+      inputSchema: obj({
+        quest_id: str, index: { type: 'integer', description: 'Criterion index (0-based).' },
+        result: { type: 'string', enum: ['pass', 'fail'] }, evidence: str,
+      }, ['quest_id', 'index', 'result', 'evidence']),
+      run: (a, me) => {
+        const index = a.index
+        if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) throw new ToolError("'index' must be a non-negative integer")
+        const result = a.result
+        if (result !== 'pass' && result !== 'fail') throw new ToolError("'result' must be pass or fail")
+        const q = quests.verify(s(a, 'quest_id', true)!, index, result, s(a, 'evidence', true, 2000)!, me)
+        return questView(q, store)
       },
     },
     { name: 'request_human', roles: 'all',

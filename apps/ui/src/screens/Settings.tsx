@@ -55,6 +55,45 @@ function Head({ title, sub }: { title: string; sub: string }) {
 }
 const card = 'rounded-xl border border-line bg-surface px-5 py-4.5'
 
+/** Team check-ins (feedback #8): how often orchestrators get a digest of their busy workers, plus "Check now". */
+function TeamCheckRow({ minutes, onChange }: { minutes: number; onChange: (m: number) => void }) {
+  const { state, mode } = useStore()
+  const [note, setNote] = useState<Record<string, string>>({})
+  const options = [0, 2, 5, 10, 15]
+  const checkNow = async (projectId: string) => {
+    setNote((n) => ({ ...n, [projectId]: 'Checking…' }))
+    try {
+      const r = await endpoints.teamCheck(projectId)
+      setNote((n) => ({ ...n, [projectId]: r.sent ? '✓ Sent to the orchestrator' : `Not sent: ${r.reason ?? 'nothing to check'}` }))
+    } catch (e) { setNote((n) => ({ ...n, [projectId]: `✕ ${errorMessage(e)}` })) }
+  }
+  return (
+    <div className="flex flex-col gap-3 border-t border-line-soft pt-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="min-w-[260px]"><span className="block font-medium">Team check-ins</span><span className="text-xs text-ink-dim">While workers are busy, each orchestrator gets a short digest of its team and acts on anyone stuck or off task. Skipped when nothing changed.</span></span>
+        <div role="radiogroup" aria-label="Team check-in interval" className="flex gap-1.5">
+          {options.map((m) => (
+            <button key={m} type="button" role="radio" aria-checked={minutes === m} onClick={() => onChange(m)}
+              className={cx('rounded-full border px-2.5 py-1.5 text-xs', minutes === m ? 'border-ink bg-ink text-ground' : 'border-line text-ink-soft')}>{m === 0 ? 'Off' : `${m} min`}</button>
+          ))}
+        </div>
+      </div>
+      {mode === 'live' && state.projects.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {state.projects.map((p) => (
+            <div key={p.id} className="flex items-center gap-3 text-[13px]">
+              <span className="w-40 truncate">{p.name}</span>
+              <button type="button" disabled={!p.orchestratorId || note[p.id] === 'Checking…'} onClick={() => void checkNow(p.id)}
+                className="rounded-md border border-line px-2.5 py-1 text-xs text-ink-soft hover:border-line-strong disabled:opacity-50">Check now</button>
+              <span className="text-xs text-ink-dim">{!p.orchestratorId ? 'No orchestrator' : note[p.id] ?? ''}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Limits() {
   const { state, dispatch } = useStore()
   const g = state.guards
@@ -93,6 +132,7 @@ function Limits() {
           <Toggle on={g.autoDownshiftAtPct != null} onChange={(v) => set({ autoDownshiftAtPct: v ? 85 : undefined })} t="Auto-downshift at 85%" d="Move workers to Haiku 5.5. Orchestrators and anything mid-merge keep their model." />
           <Toggle on={g.resumeAfterReset} onChange={(v) => set({ resumeAfterReset: v })} t="Resume paused agents after reset" d="Otherwise they wait for you." />
         </div>
+        <TeamCheckRow minutes={g.teamCheckMinutes ?? 5} onChange={(m) => set({ teamCheckMinutes: m })} />
       </section>
       <section className={card}>
         <b>Daily dollar caps</b>

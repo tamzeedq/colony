@@ -15,6 +15,7 @@ import type { Store } from './store'
 import { assertRepoUrl } from './infra/validate'
 import type { SupabaseService } from './supabase'
 import type { CheckpointService } from './checkpoints'
+import type { TeamCheckService } from './teamcheck'
 
 export interface HttpDeps {
   config: Config
@@ -27,6 +28,7 @@ export interface HttpDeps {
   quests: QuestService
   supabase: SupabaseService
   checkpoints: CheckpointService
+  teamCheck: TeamCheckService
 }
 
 // ── validation helpers ────────────────────────────────────────────────────────
@@ -81,6 +83,7 @@ const GUARD_BOOL_KEYS = ['paceForecast', 'resumeAfterReset'] as const
 export function parseGuardsPatch(b: Obj): Partial<Guards> {
   const out: Record<string, unknown> = {}
   for (const k of Object.keys(b)) {
+    if (k === 'teamCheckMinutes') continue
     if (!(GUARD_PCT_KEYS as readonly string[]).includes(k) && !(GUARD_BOOL_KEYS as readonly string[]).includes(k)) {
       throw badRequest(`unknown guard '${k}'`)
     }
@@ -94,6 +97,7 @@ export function parseGuardsPatch(b: Obj): Partial<Guards> {
     }
     out[k] = num(b, k, { min: 0, max: 100 })
   }
+  if ('teamCheckMinutes' in b) out.teamCheckMinutes = num(b, 'teamCheckMinutes', { min: 0, max: 120, int: true })
   for (const k of GUARD_BOOL_KEYS) {
     if (!(k in b)) continue
     if (typeof b[k] !== 'boolean') throw badRequest(`'${k}' must be a boolean`)
@@ -137,7 +141,7 @@ export function checkAdmin(config: Config, headers: Record<string, string | stri
 // ── routes ────────────────────────────────────────────────────────────────────
 
 export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
-  const { store, agents, projects, merges, config, guards, providers, quests, supabase, checkpoints } = d
+  const { store, agents, projects, merges, config, guards, providers, quests, supabase, checkpoints, teamCheck } = d
 
   // Accept empty JSON bodies (e.g. POST /pause sent with a JSON content type).
   app.removeContentTypeParser('application/json')
@@ -257,6 +261,11 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
     })
     return reply.status(201).send(agent)
   })
+  // Team check-in now (feedback #8): the commander's "Check now".
+  app.post('/api/projects/:id/team-check', async (req) => {
+    projects.get(param(req, 'id'))
+    return teamCheck.check(param(req, 'id'), { force: true })
+  })
   // "Let the Orchestrator decide" in Spawn (the orchestrator picks class + model and spawns).
   app.post('/api/projects/:id/worker-requests', async (req, reply) => {
     const b = body(req)
@@ -332,6 +341,14 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
       acceptance,
     }, 'you')
     return reply.status(201).send(q)
+  })
+  // The commander ticks an acceptance criterion (feedback #11: human-checkable items, or overriding).
+  app.post('/api/quests/:id/acceptance/:index', async (req) => {
+    const index = Number(param(req, 'index'))
+    if (!Number.isInteger(index) || index < 0) throw badRequest('index must be a non-negative integer')
+    const done = bool(body(req), 'done')
+    if (done === undefined) throw badRequest("send 'done' (boolean)")
+    return quests.commanderCheck(param(req, 'id'), index, done)
   })
   app.patch('/api/quests/:id', async (req) => {
     const b = body(req)

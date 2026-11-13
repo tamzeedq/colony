@@ -42,7 +42,7 @@ export interface AgentRecord {
 
 export const DEFAULT_GUARDS: Guards = {
   warnAtPct: 70, pauseWorkersAtPct: 90, orchestratorReservePct: 5, weeklyWarnAtPct: 70,
-  paceForecast: true, resumeAfterReset: false,
+  paceForecast: true, resumeAfterReset: false, teamCheckMinutes: 5,
 }
 
 export const nowIso = () => new Date().toISOString()

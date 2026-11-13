@@ -5,6 +5,7 @@ import { useStore } from '@/store/store'
 import { StatusBadge, ModelBadge, RoleTile, Button } from '@/components/ui/primitives'
 import { Bar, inputCls } from '@/components/ui/controls'
 import { cx, usd } from '@/lib/util'
+import { AcceptanceList } from '@/components/quest/AcceptanceList'
 
 /** Columns by dependency depth; edges are straight lines between card edges. */
 function layoutGraph(focus: QuestT, all: QuestT[]) {
@@ -82,10 +83,7 @@ export function Quest() {
               {quest.why && <div className="text-xs leading-normal text-[#C9C0FA]"><b>Why (Orchestrator):</b> {quest.why}</div>}
             </section>
             <section className="rounded-xl border border-line bg-surface px-4.5 py-4">
-              <h2 className="text-section mb-2.5">Acceptance · {done} of {quest.acceptance.length}</h2>
-              <div className="mb-3"><Bar pct={quest.acceptance.length ? (done / quest.acceptance.length) * 100 : 0} className="bg-st-run" h="h-1.5" /></div>
-              {quest.acceptance.map((c) => <div key={c.text} className="flex gap-2.5 py-1 text-[13px]"><span className={cx('font-mono', c.done ? 'text-st-done' : 'text-ink-dim')}>{c.done ? '✓' : '○'}</span><span className={c.done ? '' : 'text-ink-muted'}>{c.text}</span></div>)}
-              {!quest.acceptance.length && <p className="m-0 text-[13px] text-ink-dim">No acceptance criteria yet.</p>}
+              <AcceptanceList quest={quest} />
             </section>
           </div>
           <section className="rounded-xl border border-line-soft bg-well px-4.5 py-4">
