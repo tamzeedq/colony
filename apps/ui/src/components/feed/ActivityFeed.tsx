@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import type { ActivityEvent, ActivityKind } from '@/types/colony'
+import type { ActivityEvent, ActivityKind, Agent } from '@/types/colony'
+import { Emblem, agentSeed } from '@/components/agent/AgentIcon'
 import { useStore } from '@/store/store'
 import { useThrottledStream, type FeedItem } from '@/hooks/useThrottledStream'
 import { ago, cx } from '@/lib/util'
@@ -21,7 +22,7 @@ export function FeedIcon({ kind }: { kind: ActivityKind }) {
   return <span aria-hidden="true" className={cx('grid h-[18px] w-[18px] shrink-0 place-items-center rounded-xs font-mono text-[10px]', k.cls)}>{k.g}</span>
 }
 
-export function FeedRow({ e, who, showTime = true }: { e: FeedItem; who: string; showTime?: boolean }) {
+export function FeedRow({ e, who, agent, showTime = true }: { e: FeedItem; who: string; agent?: Agent; showTime?: boolean }) {
   const text = e.groupCount && e.groupCount > 1
     ? `${e.kind === 'edit' ? 'edited' : 'ran'} ${e.groupCount} ${e.kind === 'edit' ? 'files' : 'tool calls'} · latest ${e.text}`
     : e.text
@@ -29,6 +30,7 @@ export function FeedRow({ e, who, showTime = true }: { e: FeedItem; who: string;
     <div className="flex items-start gap-2 border-b border-line-soft/70 py-1.5 text-xs leading-[1.45]">
       <FeedIcon kind={e.kind} />
       <div className="min-w-0 flex-1">
+        {agent && <span className="mr-1 inline-block align-[-3px]"><Emblem seed={agentSeed(agent)} size={14} /></span>}
         <b className="font-semibold">{who}</b>{' '}
         <span className={cx('text-ink-soft', e.kind === 'thought' && 'italic text-[#C9C0FA]', (e.kind === 'command' || e.kind === 'tool') && 'font-mono')}>{text}</span>
       </div>
@@ -40,7 +42,7 @@ export function FeedRow({ e, who, showTime = true }: { e: FeedItem; who: string;
 export function ActivityFeed({ filter, limit = 10, title = 'Activity' }: { filter?: (e: ActivityEvent) => boolean; limit?: number; title?: string }) {
   const { state, subscribe, seedEvents } = useStore()
   const { items, pending, hold, release } = useThrottledStream(subscribe, { initial: seedEvents, filter })
-  const names = useMemo(() => Object.fromEntries(state.agents.map((a) => [a.id, a.callsign])), [state.agents])
+  const byId = useMemo(() => new Map(state.agents.map((a) => [a.id, a])), [state.agents])
   const rows = items.slice(-limit).reverse()
   return (
     <section aria-label={title} onMouseEnter={hold} onMouseLeave={release}>
@@ -56,7 +58,7 @@ export function ActivityFeed({ filter, limit = 10, title = 'Activity' }: { filte
         </button>
       )}
       <div aria-live="off">
-        {rows.map((e) => <FeedRow key={e.id} e={e} who={names[e.agentId] ?? e.agentId} />)}
+        {rows.map((e) => <FeedRow key={e.id} e={e} who={byId.get(e.agentId)?.callsign ?? e.agentId} agent={byId.get(e.agentId)} />)}
       </div>
     </section>
   )

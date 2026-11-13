@@ -27,6 +27,8 @@ export interface SpawnInput {
   budgetCapUsd?: number
   /** Custom roles: the commander's text standing in for <role>.md. */
   rolePrompt?: string
+  /** Seed for the agent's generated emblem (1–32 chars of [A-Za-z0-9-]). */
+  iconSeed?: string
 }
 
 export interface PatchInput {
@@ -55,6 +57,8 @@ export interface BackendProvider {
   /** "Dev backend" section appended to the system prompt, or undefined. */
   prompt(projectId: string): string | undefined
 }
+
+const ICON_SEED_RE = /^[A-Za-z0-9-]{1,32}$/
 
 const CALLSIGN_WORDS = [
   'Vex', 'Mira', 'Kip', 'Rho', 'Juno', 'Atlas', 'Sable', 'Tern', 'Lux', 'Pike', 'Onyx', 'Wren', 'Ash', 'Dot',
@@ -136,11 +140,14 @@ export class AgentManager {
     const rolePrompt = this.roles.compose(input.role, { project: p.name, stack: p.stack, goal: p.goal, orchestrator }, input.rolePrompt)
     const budget = input.budgetCapUsd ?? this.config.defaultBudgetCapUsd
     const task = input.task?.trim() || (input.role === 'orchestrator' && p.goal.trim() ? kickoff(p.goal) : '')
+    const iconSeed = input.iconSeed?.trim() || undefined
+    if (iconSeed && !ICON_SEED_RE.test(iconSeed)) throw badRequest('iconSeed must be 1–32 characters of A–Z, a–z, 0–9 or -')
     const t = nowIso()
     const agent: Agent = {
       id, projectId, callsign, role: input.role, provider: model.provider, model: model.id,
       status: 'booting', controller: 'agent', branch: `agent/${lower}`,
-      container: { name: `colony-agent-${id}`, cpuPct: 0, memMb: 0, memLimitMb: this.config.agentMemoryMb, health: 'ok' },
+      container: { name: `colony-agent-${id}`, cpuPct: 0, cpuLimit: this.config.agentCpus, memMb: 0, memLimitMb: this.config.agentMemoryMb, health: 'ok' },
+      ...(iconSeed ? { iconSeed } : {}),
       contextPct: 0, tokensToday: 0, spendTodayUsd: 0, budgetCapUsd: budget, sessionShare: 0, uptimeSec: 0,
       level: 1, xp: 0, questsDone: 0, rolePrompt, allowedTools: ['read', 'edit', 'bash'],
       currentAction: 'Booting container',
@@ -197,7 +204,7 @@ export class AgentManager {
         agentId: id, projectSlug: prec.slug, image: this.config.agentImage, env: this.buildEnv(rec, token),
         memoryMb: this.config.agentMemoryMb, cpus: this.config.agentCpus,
       })
-      this.store.patchAgent(id, { container: { ...this.get(id).agent.container, name, health: 'ok' } }, { startedAt: nowIso() })
+      this.store.patchAgent(id, { container: { ...this.get(id).agent.container, name, cpuLimit: this.config.agentCpus, health: 'ok' } }, { startedAt: nowIso() })
       this.armTimer(id, this.config.runnerGraceMs * BOOT_TIMEOUT_FACTOR, 'never connected after start')
     } catch (e) {
       const msg = (e as Error).message

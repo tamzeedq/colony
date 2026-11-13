@@ -9,11 +9,12 @@ import { TerminalSession } from '@/api/terminal'
 import { useDiff, DiffFileButton, CompactDiff } from '@/components/review/DiffView'
 import { diffTotals } from '@/lib/diff'
 import { useThrottledStream } from '@/hooks/useThrottledStream'
-import { StatusBadge, RoleTile, Button } from '@/components/ui/primitives'
+import { StatusBadge, Button } from '@/components/ui/primitives'
+import { AgentIcon } from '@/components/agent/AgentIcon'
 import { Tabs, Segmented, Bar, inputCls } from '@/components/ui/controls'
 import { FeedRow } from '@/components/feed/ActivityFeed'
 import { Checkpoints } from '@/components/agent/Checkpoints'
-import { cx, usd } from '@/lib/util'
+import { containerCpu, cx, usd } from '@/lib/util'
 
 type Tab = 'feed' | 'term' | 'changes' | 'task' | 'config'
 
@@ -88,7 +89,7 @@ function Header({ agent, onClose }: { agent: Agent; onClose: () => void }) {
   const project = state.projects.find((p) => p.id === agent.projectId)
   return (
     <div className="flex flex-wrap items-start gap-4 border-b border-line-soft px-5 py-4">
-      <RoleTile role={agent.role} size={64} level={agent.level} />
+      <AgentIcon agent={agent} size={64} level={agent.level} />
       <div className="min-w-60 flex-1">
         <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="m-0 font-display text-[28px] font-semibold leading-none">{agent.callsign}</h1>
@@ -118,18 +119,19 @@ function ModelOptions({ current }: { current: ModelId }) {
 }
 
 function Stats({ agent }: { agent: Agent }) {
-  const items = [
+  const cpu = containerCpu(agent.container)
+  const items: { l: string; v: string; s: string; p: number; c: string; t?: string }[] = [
     { l: 'Context', v: `${agent.contextPct}%`, s: `${Math.round(agent.contextPct * 2)}k / 200k`, p: agent.contextPct, c: agent.contextPct > 85 ? 'bg-st-error' : 'bg-ink' },
     { l: 'Session share', v: `${Math.round(agent.sessionShare * 100)}%`, s: `${(agent.tokensToday / 1e6).toFixed(2)}M tokens`, p: agent.sessionShare * 100, c: 'bg-ink-muted' },
     { l: 'Spend', v: usd(agent.spendTodayUsd), s: `/ ${usd(agent.budgetCapUsd)} cap`, p: (agent.spendTodayUsd / agent.budgetCapUsd) * 100, c: 'bg-ink-muted' },
     { l: 'Uptime', v: `${Math.floor(agent.uptimeSec / 3600)}h ${Math.floor((agent.uptimeSec % 3600) / 60)}m`, s: '', p: 100, c: 'bg-line' },
-    { l: 'Container', v: `${agent.container.cpuPct}%`, s: `CPU · ${(agent.container.memMb / 1024).toFixed(1)} / ${agent.container.memLimitMb / 1024} GB`, p: agent.container.cpuPct, c: 'bg-ink-muted' },
+    { l: 'Container', v: cpu.label, s: `CPU · ${(agent.container.memMb / 1024).toFixed(1)} / ${agent.container.memLimitMb / 1024} GB`, p: cpu.pct, c: cpu.pct > 90 ? 'bg-st-blocked' : 'bg-ink-muted', t: `CPU ${cpu.detail} (${cpu.label} of its allowance)` },
     { l: `Level ${agent.level}`, v: `${agent.questsDone}`, s: `quests · ${agent.xp}% to Lv ${agent.level + 1}`, p: agent.xp, c: 'bg-ink-soft' },
   ]
   return (
     <div className="grid grid-cols-3 gap-px border-b border-line-soft bg-line-soft md:grid-cols-6">
       {items.map((i) => (
-        <div key={i.l} className="bg-ground px-3.5 py-2.5">
+        <div key={i.l} className="bg-ground px-3.5 py-2.5" title={i.t}>
           <div className="text-label">{i.l}</div>
           <div className="text-numeral mt-0.5 text-[17px]">{i.v} <span className="font-sans text-[11px] font-normal text-ink-dim">{i.s}</span></div>
           <div className="mt-1"><Bar pct={i.p} className={i.c} h="h-[3px]" /></div>

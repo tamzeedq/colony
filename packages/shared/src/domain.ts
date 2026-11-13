@@ -166,7 +166,10 @@ export interface Agent {
   currentTaskId?: ID
   currentAction?: string      // "npm test -- streaks"
   branch?: string
-  container: { name: string; cpuPct: number; memMb: number; memLimitMb: number; health: 'ok' | 'degraded' | 'down' }
+  /** cpuPct is per core, like `docker stats` (100 = one core); cpuLimit is the cores the container may use. */
+  container: { name: string; cpuPct: number; cpuLimit?: number; memMb: number; memLimitMb: number; health: 'ok' | 'degraded' | 'down' }
+  /** Seed for the generated emblem (AgentIcon); the id is used when absent. Rerolled at spawn. */
+  iconSeed?: string
   contextPct: number          // 0–100 of context window used
   tokensToday: number
   spendTodayUsd: number

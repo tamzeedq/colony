@@ -8,6 +8,7 @@ import { errorMessage } from '@/api/client'
 import { EmptyWorld } from '@/components/states/EmptyStates'
 import { Segments, Switch, Field, inputCls } from '@/components/ui/controls'
 import { KeyHint } from '@/components/ui/primitives'
+import { Emblem, randomIconSeed } from '@/components/agent/AgentIcon'
 import { cx } from '@/lib/util'
 
 const DESC: Record<RoleId, string> = {
@@ -35,6 +36,7 @@ export function Spawn() {
   const [model, setModel] = useState<ModelId>('sonnet-5.5')
   const [orch, setOrch] = useState(false)
   const [name, setName] = useState(callsign())
+  const [iconSeed, setIconSeed] = useState(randomIconSeed)
   const [cap, setCap] = useState(8)
   const [task, setTask] = useState('')
   const [tools, setTools] = useState<string[]>(['read', 'edit', 'bash', 'supabase'])
@@ -59,6 +61,7 @@ export function Spawn() {
         role, model, callsign: name.trim() || undefined,
         task: task.trim() || undefined, budgetCapUsd: cap > 0 ? cap : undefined,
         rolePrompt: role === 'custom' && customPrompt.trim() ? customPrompt.trim() : undefined,
+        iconSeed,
       })
       if (agent?.id) dispatch({ type: 'upsertAgent', agent })
       nav(`/base/${project.key}`)
@@ -74,7 +77,7 @@ export function Spawn() {
     const agent: Agent = {
       id, projectId: project.id, callsign: name, role: orch ? 'frontend' : role, model: orch ? 'sonnet-5.5' : model, status: 'booting', controller: 'agent',
       currentAction: 'Booting container…', branch: `agent/${id}/main`,
-      provider: 'claude-subscription',
+      provider: 'claude-subscription', iconSeed,
       container: { name: `${project.id.slice(2)}-${id}`, cpuPct: 5, memMb: 300, memLimitMb: 4096, health: 'ok' },
       contextPct: 0, tokensToday: 0, spendTodayUsd: 0, budgetCapUsd: cap, sessionShare: 0, uptimeSec: 0, level: 1, xp: 0, questsDone: 0,
       rolePrompt: role === 'custom' && customPrompt.trim() ? customPrompt.trim() : DESC[role], allowedTools: tools,
@@ -115,9 +118,14 @@ export function Spawn() {
 
         <section aria-label="Preview" className="flex min-w-0 flex-[1_1_320px] flex-col items-center gap-3.5 border-r border-line-soft bg-well bg-[radial-gradient(#1A212A_1px,transparent_1px)] bg-[length:20px_20px] px-6 py-5.5">
           <div className="text-label self-start">Recruit preview</div>
-          <div className="relative mt-2.5 grid h-[168px] w-[168px] place-items-center rounded-[28px] border-2 border-line-strong bg-raised" style={{ backgroundImage: orch ? undefined : ROLES[role].texture }}>
-            <span className="font-display text-5xl font-bold text-ink-soft">{orch ? '?' : ROLES[role].code}</span>
+          <div className="relative mt-2.5 grid h-[168px] w-[168px] place-items-center rounded-[28px] border-2 border-line-strong bg-raised">
+            {orch ? <span className="font-display text-5xl font-bold text-ink-soft">?</span> : <Emblem seed={iconSeed} size={124} title={`${name} emblem`} />}
+            {!orch && <span className="absolute -left-3 top-3 rounded-sm border border-line-strong bg-ground px-1.5 py-0.5 font-mono text-xs font-semibold text-ink-soft">{ROLES[role].code}</span>}
             <span className="absolute -bottom-3 rounded-full border border-line-strong bg-ground px-3 py-0.5 font-display text-xs font-semibold">Lv 1</span>
+            {!orch && (
+              <button type="button" aria-label="Reroll emblem" title="Reroll emblem" onClick={() => setIconSeed(randomIconSeed())}
+                className="absolute -right-3 top-3 h-8 w-8 rounded-md border border-line bg-surface text-ink-muted hover:text-ink">↻</button>
+            )}
           </div>
           <div className="mt-3.5 flex items-center gap-2">
             <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Callsign" className="w-[150px] border-b border-dashed border-line-strong bg-transparent p-1 text-center font-display text-[26px] font-semibold outline-none" />
