@@ -88,7 +88,8 @@ export class StatsPoller {
   /** Called on every tick (plan-usage rollover). */
   onTick?: () => void
 
-  constructor(private store: Store, private infra: InfraDriver, private intervalMs: number, private log: Log) {}
+  /** `agentCpus`: the CPU limit to report for agents stored before cpuLimit was recorded. */
+  constructor(private store: Store, private infra: InfraDriver, private intervalMs: number, private log: Log, private agentCpus?: number) {}
 
   start() {
     if (this.timer) return
@@ -123,7 +124,7 @@ export class StatsPoller {
           const s = await this.infra.agentStats(a.id).catch(() => null)
           if (!this.store.agents.has(a.id)) continue
           const container: Agent['container'] = s
-            ? { name: a.container.name, cpuPct: Math.round(s.cpuPct * 10) / 10, memMb: Math.round(s.memMb), memLimitMb: Math.round(s.memLimitMb) || a.container.memLimitMb, health: s.running ? (this.store.connected.has(a.id) || a.status === 'booting' ? 'ok' : 'degraded') : 'down' }
+            ? { name: a.container.name, cpuPct: Math.round(s.cpuPct * 10) / 10, cpuLimit: a.container.cpuLimit ?? this.agentCpus, memMb: Math.round(s.memMb), memLimitMb: Math.round(s.memLimitMb) || a.container.memLimitMb, health: s.running ? (this.store.connected.has(a.id) || a.status === 'booting' ? 'ok' : 'degraded') : 'down' }
             : { ...a.container, cpuPct: 0, memMb: 0, health: 'down' }
           if (s?.running) running++
           const uptimeSec = this.store.toAgent(rec).uptimeSec

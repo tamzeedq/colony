@@ -214,6 +214,18 @@ describe('agents and runners', () => {
     }
   })
 
+  test('spawn records the CPU limit and an optional icon seed', async () => {
+    const { agent } = await spawn(c, project.id, { role: 'qa', iconSeed: 'reroll-3f9a' })
+    assert.equal(agent.container.cpuLimit, c.config.agentCpus)
+    assert.equal(agent.iconSeed, 'reroll-3f9a')
+    const { agent: plain } = await spawn(c, project.id, { role: 'qa' })
+    assert.equal('iconSeed' in plain, false)
+    for (const bad of ['has space', 'x'.repeat(33), 'emoji✨', 12]) {
+      const r = await api(c, 'POST', `/api/projects/${project.id}/agents`, { role: 'qa', iconSeed: bad })
+      assert.equal(r.status, 400, JSON.stringify(bad))
+    }
+  })
+
   test('runner with the token connects, goes idle, and gets the initial task', async () => {
     const ui = await openUi(c)
     const { agent, token } = await spawn(c, project.id, { role: 'frontend', task: 'Build the streak widget', model: 'haiku-5.5' })

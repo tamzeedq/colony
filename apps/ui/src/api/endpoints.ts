@@ -2,7 +2,7 @@
 import type { ActivityEvent, Agent, Alert, Analytics, AnalyticsDays, GithubConfig, GithubTokenStatus, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
 import { api, apiText, enc } from './client'
 
-export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string }
+export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string; iconSeed?: string }
 export interface QuestInput { title: string; brief?: string; priority?: Quest['priority']; acceptance?: string[] }
 export interface QuestPatch { status?: Quest['status']; title?: string; brief?: string; priority?: Quest['priority'] }
 export interface ProjectInput { name: string; goal?: string; stack?: string[]; repoUrl?: string; dailyCapUsd?: number; supabase?: boolean; supabaseStudio?: boolean }

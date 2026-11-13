@@ -95,7 +95,7 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   }
   const github = new GithubService(store, config, infra, opts.fetch)
   const terminals = new TerminalHub(config, store, infra, log)
-  const stats = new StatsPoller(store, infra, config.statsIntervalMs, log)
+  const stats = new StatsPoller(store, infra, config.statsIntervalMs, log, config.agentCpus)
   stats.onTick = () => { guards.checkSessionRollover() }
   stats.onDockerBack = async () => {
     await reconcile(store, infra, agents, log, { autoResume: config.autoResume })

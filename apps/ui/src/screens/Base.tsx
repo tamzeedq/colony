@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { useStore, projectByKey, projectAgents, sessionShare } from '@/store/store'
 import { STATUS } from '@/design/status'
@@ -10,7 +10,7 @@ import { ActivityFeed } from '@/components/feed/ActivityFeed'
 import { Button } from '@/components/ui/primitives'
 import { Bar, inputCls } from '@/components/ui/controls'
 import { useMediaQuery, WIDE } from '@/hooks/useMediaQuery'
-import { cx, usd } from '@/lib/util'
+import { containerCpu, cx, usd } from '@/lib/util'
 import type { Project } from '@/types/colony'
 
 export function Base() {
@@ -18,6 +18,7 @@ export function Base() {
   const { state, dispatch } = useStore()
   const project = projectByKey(state, Number(key))
   const wide = useMediaQuery(WIDE)
+  const [fillRef, fillHeight] = useFillViewport(wide)
   const [goal, setGoal] = useState(project?.goal ?? '')
   const [sent, setSent] = useState<'' | 'sending' | 'ok' | 'error'>('')
   if (!project) return <Navigate to="/" replace />
@@ -54,10 +55,15 @@ export function Base() {
       </form>
 
       {wide ? (
-        <div className="grid flex-1 grid-cols-[400px_minmax(0,1fr)_440px]">
-          <aside className="border-r border-line-soft bg-well px-4.5 py-4"><QuestBoard project={project} layout="lanes" /></aside>
-          <section className="flex min-w-0 flex-col"><BaseMap project={project} height={640} /><TeamStrip project={project} /></section>
-          <RightRail project={project} />
+        // Wide: the three columns fill the rest of the viewport. The map and team strip take the
+        // middle at full height; the quest lanes and the activity/infra rail scroll on their own.
+        <div ref={fillRef} className="grid grid-cols-[400px_minmax(0,1fr)_440px] overflow-hidden" style={{ height: fillHeight }}>
+          <aside className="min-h-0 overflow-y-auto overscroll-contain border-r border-line-soft bg-well px-4.5 py-4"><QuestBoard project={project} layout="lanes" /></aside>
+          <section className="flex min-h-0 min-w-0 flex-col">
+            <div className="min-h-0 flex-1"><BaseMap project={project} height="100%" /></div>
+            <div className="max-h-[40%] shrink-0 overflow-y-auto"><TeamStrip project={project} /></div>
+          </section>
+          <RightRail project={project} scroll />
         </div>
       ) : (
         <div className="flex flex-wrap">
@@ -70,6 +76,32 @@ export function Base() {
       )}
     </div>
   )
+}
+
+/**
+ * Height that fills the viewport from the element's top (measured at scroll 0), so the wide
+ * layout ends at the bottom of the window. Re-measured when the window or anything above the
+ * element (HUD wrap, banners, the goal bar) changes size.
+ */
+function useFillViewport(enabled: boolean, min = 560) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [h, setH] = useState<number | undefined>(undefined)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!enabled || !el) return
+    const measure = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY
+      const next = Math.max(min, Math.floor(window.innerHeight - top))
+      setH((prev) => (prev === next ? prev : next))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(document.body)
+    for (let n = el.previousElementSibling; n; n = n.previousElementSibling) ro.observe(n)
+    window.addEventListener('resize', measure)
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure) }
+  }, [enabled, min])
+  return [ref, h] as const
 }
 
 function TeamStrip({ project }: { project: Project }) {
@@ -90,7 +122,7 @@ function TeamStrip({ project }: { project: Project }) {
   )
 }
 
-function RightRail({ project }: { project: Project }) {
+function RightRail({ project, scroll = false }: { project: Project; scroll?: boolean }) {
   const { state, mode } = useStore()
   const agents = projectAgents(state, project)
   const review = state.quests.find((q) => q.projectId === project.id && q.status === 'in_review')
@@ -101,7 +133,7 @@ function RightRail({ project }: { project: Project }) {
     ? agents.filter((a) => a.branch && a.branch !== 'main' && !branches.some((q) => q.branch === a.branch))
     : []
   return (
-    <aside className="flex min-w-0 max-w-[440px] flex-[1_1_360px] flex-col border-l border-line-soft bg-well">
+    <aside className={cx('flex min-w-0 max-w-[440px] flex-[1_1_360px] flex-col border-l border-line-soft bg-well', scroll && 'min-h-0 overflow-y-auto overscroll-contain')}>
       <div className="border-b border-line-soft px-5 py-4.5"><ActivityFeed filter={(e) => e.projectId === project.id} limit={9} /></div>
       <section aria-label="Infra" className="flex flex-col gap-3.5 px-5 py-4.5">
         <h2 className="text-section">Infra</h2>
@@ -109,14 +141,17 @@ function RightRail({ project }: { project: Project }) {
         <GithubPanel project={project} />
         <div className="rounded-lg border border-line bg-surface p-3">
           <div className="mb-2 flex items-center"><span className="font-semibold">Containers</span><span className="ml-auto text-[11px] text-ink-dim">{agents.filter((a) => a.container.health !== 'down').length} running</span></div>
-          {agents.map((a) => (
-            <div key={a.id} className="flex items-center gap-2 py-0.5 text-xs">
-              <span className={cx('w-3 font-mono', a.container.health === 'down' ? 'text-st-error' : 'text-st-done')}>{a.container.health === 'down' ? '✕' : '●'}</span>
-              <span className="w-[100px] font-mono text-ink-soft">{a.id}</span>
-              <span className="flex-1"><Bar pct={a.container.cpuPct} /></span>
-              <span className="w-9 text-right font-mono text-ink-dim">{a.container.cpuPct}%</span>
-            </div>
-          ))}
+          {agents.map((a) => {
+            const cpu = containerCpu(a.container)
+            return (
+              <div key={a.id} className="flex items-center gap-2 py-0.5 text-xs" title={`${a.id} · CPU ${cpu.detail} (${cpu.label} of its allowance)`}>
+                <span className={cx('w-3 font-mono', a.container.health === 'down' ? 'text-st-error' : 'text-st-done')}>{a.container.health === 'down' ? '✕' : '●'}</span>
+                <span className="w-[100px] truncate font-mono text-ink-soft">{a.id}</span>
+                <span className="flex-1"><Bar pct={cpu.pct} className={cpu.pct > 90 ? 'bg-st-blocked' : 'bg-ink-muted'} /></span>
+                <span className="w-10 text-right font-mono text-ink-dim">{cpu.label}</span>
+              </div>
+            )
+          })}
         </div>
         <div className="rounded-lg border border-line bg-surface p-3">
           <div className="mb-2 font-semibold">Branches</div>

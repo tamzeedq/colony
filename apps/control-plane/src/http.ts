@@ -243,6 +243,11 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
   })
 
   // agents
+  const iconSeed = (b: Obj) => {
+    const s = str(b, 'iconSeed', { max: 32 })
+    if (s && !/^[A-Za-z0-9-]{1,32}$/.test(s)) throw badRequest("'iconSeed' must be 1–32 characters of A–Z, a–z, 0–9 or -")
+    return s || undefined
+  }
   app.post('/api/projects/:id/agents', async (req, reply) => {
     const b = body(req)
     const role = str(b, 'role', { required: true })
@@ -254,6 +259,7 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
       task: str(b, 'task', { max: 20_000 }),
       budgetCapUsd: num(b, 'budgetCapUsd', { min: 0 }),
       rolePrompt: str(b, 'rolePrompt', { max: 50_000 }),
+      iconSeed: iconSeed(b),
     })
     return reply.status(201).send(agent)
   })
