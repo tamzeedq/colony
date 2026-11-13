@@ -1,7 +1,7 @@
 // Dev Supabase per project (docs/phase4.md): provisioning, start/stop with activity, wipe,
 // agent env and the "Dev backend" prompt section. The driver does the Docker/CLI work.
 
-import type { Agent, SupabaseDetails, SupabaseInfo } from '@colony/shared'
+import type { Agent, RoleId, SupabaseDetails, SupabaseInfo } from '@colony/shared'
 import type { BackendProvider } from './agents'
 import type { Config } from './config'
 import type { Db } from './db'
@@ -19,6 +19,14 @@ export const IN_NETWORK = {
 }
 
 const IDLE_STATUSES = new Set(['error', 'done'])
+
+/** Roles that get SUPABASE_SERVICE_ROLE_KEY (it bypasses row-level security). Frontend, QA and
+ *  researcher agents get the anon key only (feedback item 6). */
+export const SERVICE_ROLE_ROLES: readonly RoleId[] = ['backend', 'devops', 'orchestrator', 'custom']
+export const hasServiceRole = (role?: RoleId) => role === undefined || SERVICE_ROLE_ROLES.includes(role)
+
+/** Storage runs unless turned off; a provisioned stack from before the switch counts as on. */
+export const storageOn = (s: SupabaseInfo) => s.storage !== false
 
 export class SupabaseService implements BackendProvider {
   /** In-flight start/stop/reset per project. */
@@ -50,27 +58,34 @@ export class SupabaseService implements BackendProvider {
     return this.db.kvGet<Keys>(`supabase_keys:${projectId}`) ?? undefined
   }
 
-  env(projectId: string): Record<string, string> | undefined {
+  env(projectId: string, role?: RoleId): Record<string, string> | undefined {
     const r = this.store.projects.get(projectId)
     if (!r || r.project.supabase.status === 'none') return undefined
     const k = this.keys(projectId)
     return {
       SUPABASE_URL: IN_NETWORK.url,
       DATABASE_URL: IN_NETWORK.databaseUrl,
-      ...(k ? { SUPABASE_ANON_KEY: k.anonKey, SUPABASE_SERVICE_ROLE_KEY: k.serviceRoleKey } : {}),
+      ...(k ? { SUPABASE_ANON_KEY: k.anonKey } : {}),
+      ...(k && hasServiceRole(role) ? { SUPABASE_SERVICE_ROLE_KEY: k.serviceRoleKey } : {}),
     }
   }
 
-  prompt(projectId: string): string | undefined {
+  prompt(projectId: string, role?: RoleId): string | undefined {
     const r = this.store.projects.get(projectId)
     if (!r || r.project.supabase.status === 'none') return undefined
+    const storage = storageOn(r.project.supabase)
     return [
       '## Dev backend',
       '',
-      'This base has its own local Supabase stack (Postgres, Auth, REST) for development. It is reachable from your container only:',
+      `This base has its own local Supabase stack (Postgres, Auth, REST${storage ? ', Storage' : ''}) for development. It is reachable from your container only:`,
       '',
-      `- \`SUPABASE_URL\` = ${IN_NETWORK.url} (REST at /rest/v1, Auth at /auth/v1)`,
-      '- `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are in your environment.',
+      `- \`SUPABASE_URL\` = ${IN_NETWORK.url} (REST at /rest/v1, Auth at /auth/v1${storage ? ', Storage at /storage/v1' : ''})`,
+      storage
+        ? '- Storage is available: buckets and files work through `$SUPABASE_URL/storage/v1` (supabase-js `storage`). Create buckets in migrations (`storage.buckets`). Image transformations (imgproxy) are not running.'
+        : '- Storage is **off** for this base: `/storage/v1` is not served. If the work needs file uploads or buckets, ask the orchestrator to have the commander turn Storage on (Infra panel) instead of building against a missing service.',
+      hasServiceRole(role)
+        ? '- `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are in your environment. They are secrets: read them from the environment, never print, echo or commit them.'
+        : '- `SUPABASE_ANON_KEY` is in your environment (the service-role key is kept for backend roles). It is a secret: read it from the environment, never print, echo or commit it.',
       `- \`DATABASE_URL\` = ${IN_NETWORK.databaseUrl} (\`psql "$DATABASE_URL"\` works).`,
       '',
       'Schema changes go in migrations, committed to the repo: `supabase migration new <name>` creates `supabase/migrations/<timestamp>_<name>.sql` (run `supabase init` once if the repo has no `supabase/` folder). Apply them with `supabase db push --db-url "$DATABASE_URL"`. Use `list_migrations` to see what is applied and `gen_types` for TypeScript types. If the stack is not running, `get_backend` says so; ask the orchestrator rather than starting it yourself.',
@@ -79,10 +94,16 @@ export class SupabaseService implements BackendProvider {
     ].join('\n')
   }
 
-  /** Values for the get_backend MCP tool. */
-  backendFor(projectId: string) {
+  /** Values for the get_backend MCP tool (keys narrowed by role). */
+  backendFor(projectId: string, role?: RoleId) {
     const s = this.info(projectId)
-    return { status: s.status, ...(s.error ? { error: s.error } : {}), env: this.env(projectId) ?? null, hostApiUrl: s.url ?? null, studioUrl: s.studioUrl ?? null }
+    const storage = s.status !== 'none' && storageOn(s)
+    return {
+      status: s.status, ...(s.error ? { error: s.error } : {}), env: this.env(projectId, role) ?? null,
+      storage, storageUrl: storage ? `${IN_NETWORK.url}/storage/v1` : null,
+      hostApiUrl: s.url ?? null, studioUrl: s.studioUrl ?? null,
+      note: 'These values are secrets: use them from the environment, never print, echo or commit them.',
+    }
   }
 
   async details(projectId: string): Promise<SupabaseDetails> {
@@ -119,7 +140,7 @@ export class SupabaseService implements BackendProvider {
   private patch(projectId: string, partial: Partial<SupabaseInfo>, replace = false) {
     const r = this.store.projects.get(projectId)
     if (!r) return
-    const base = replace ? { slot: r.project.supabase.slot, studio: r.project.supabase.studio } : r.project.supabase
+    const base = replace ? { slot: r.project.supabase.slot, studio: r.project.supabase.studio, storage: r.project.supabase.storage } : r.project.supabase
     const next: SupabaseInfo = { ...base, ...partial } as SupabaseInfo
     for (const k of Object.keys(next) as (keyof SupabaseInfo)[]) if (next[k] === undefined) delete next[k]
     r.project = { ...r.project, supabase: next }
@@ -176,10 +197,11 @@ export class SupabaseService implements BackendProvider {
     this.run(projectId, what, async () => {
       const r = this.rec(projectId)
       const studio = !!r.project.supabase.studio
+      const storage = storageOn(r.project.supabase)
       if (what === 'reset') await this.driver.stop(r.slug, { wipe: true })
       const slot = await this.allocSlot(projectId)
       this.patch(projectId, { status: 'provisioning', slot, error: undefined, ...(what === 'reset' ? { migration: undefined } : {}) })
-      const stack = await this.driver.start(r.slug, { slot, studio, timeoutMs: this.config.supabaseStartTimeoutMs })
+      const stack = await this.driver.start(r.slug, { slot, studio, storage, timeoutMs: this.config.supabaseStartTimeoutMs })
       this.running(projectId, stack)
       this.idleSince.delete(projectId)
       const resolved = this.store.alerts.get(`al-supabase-${projectId}`)
@@ -223,27 +245,36 @@ export class SupabaseService implements BackendProvider {
   }
 
   /** Turn Studio on/off. A running stack restarts (data kept) to apply it. */
-  setStudio(projectId: string, studio: boolean): SupabaseInfo {
+  setStudio(projectId: string, studio: boolean): SupabaseInfo { return this.setServices(projectId, { studio }) }
+
+  /** Turn Studio and/or Storage on/off. A running stack restarts (data kept) to apply it. */
+  setServices(projectId: string, want: { studio?: boolean; storage?: boolean }): SupabaseInfo {
     const r = this.rec(projectId)
     const s = r.project.supabase
-    if (!!s.studio === studio) return s
+    const studio = want.studio ?? !!s.studio
+    const storage = want.storage ?? storageOn(s)
+    if (studio === !!s.studio && storage === storageOn(s)) {
+      // Record an explicit choice even when it changes nothing (e.g. storage on for an older stack).
+      if (want.storage !== undefined && s.storage === undefined) this.patch(projectId, { storage })
+      return this.info(projectId)
+    }
     if (this.ops.has(projectId)) throw conflict('a dev Supabase operation is already in progress for this base')
-    this.patch(projectId, { studio })
+    this.patch(projectId, { studio, storage })
     if (s.status === 'running') {
       this.run(projectId, 'restart', async () => {
         this.patch(projectId, { status: 'provisioning' })
         await this.driver.stop(r.slug)
         const slot = await this.allocSlot(projectId)
-        const stack = await this.driver.start(r.slug, { slot, studio, timeoutMs: this.config.supabaseStartTimeoutMs })
+        const stack = await this.driver.start(r.slug, { slot, studio, storage, timeoutMs: this.config.supabaseStartTimeoutMs })
         this.running(projectId, stack)
       })
     }
     return this.info(projectId)
   }
 
-  /** New project with the "Provision dev Supabase" toggle on. */
-  provisionNew(projectId: string, opts: { studio?: boolean } = {}) {
-    if (opts.studio) this.patch(projectId, { studio: true })
+  /** New project with the "Provision dev Supabase" toggle on. Storage defaults on (~160 MB). */
+  provisionNew(projectId: string, opts: { studio?: boolean; storage?: boolean } = {}) {
+    this.patch(projectId, { ...(opts.studio ? { studio: true } : {}), storage: opts.storage ?? true })
     return this.start(projectId)
   }
 

@@ -98,6 +98,8 @@ export interface SupabaseInfo {
   migration?: string
   /** Studio + pg_meta also run (more RAM). */
   studio?: boolean
+  /** Storage API runs (/storage/v1, ~160 MB). Missing on a provisioned stack means on. */
+  storage?: boolean
   /** Stable port slot: ports 55300 + 10*slot … +9. */
   slot?: number
   error?: string
@@ -285,6 +287,22 @@ export interface Resources {
   spendMonthUsd: number
   containers: { running: number; max: number }
   host: { cpuPct: number; memUsedGb: number; memTotalGb: number; docker: 'running' | 'down' }
+  /** Keep-awake state (feedback item 16); absent in older control planes. */
+  keepAwake?: KeepAwakeState
+}
+
+/** Off, while any agent is working, or always while Colony runs. */
+export type KeepAwakeMode = 'off' | 'working' | 'always'
+export const KEEP_AWAKE_MODES = ['off', 'working', 'always'] as const satisfies readonly KeepAwakeMode[]
+
+export interface KeepAwakeState {
+  mode: KeepAwakeMode
+  /** The machine is being held awake right now. */
+  active: boolean
+  /** Why it is (or is not) held, e.g. "2 agents working". */
+  reason: string
+  /** The platform has no supported helper (or it failed to start). */
+  unsupported?: boolean
 }
 
 export interface Guards {

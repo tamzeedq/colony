@@ -218,11 +218,12 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
   })
   app.patch('/api/projects/:id/supabase', async (req) => {
     const b = body(req)
-    for (const k of Object.keys(b)) if (k !== 'studio') throw badRequest(`unknown field '${k}'`)
+    for (const k of Object.keys(b)) if (k !== 'studio' && k !== 'storage') throw badRequest(`unknown field '${k}'`)
     const studio = bool(b, 'studio')
-    if (studio === undefined) throw badRequest("send 'studio'")
+    const storage = bool(b, 'storage')
+    if (studio === undefined && storage === undefined) throw badRequest("send 'studio' and/or 'storage'")
     projects.get(param(req, 'id'))
-    return supabase.setStudio(param(req, 'id'), studio)
+    return supabase.setServices(param(req, 'id'), { studio, storage })
   })
   app.get('/api/projects/:id/branches', async (req) => projects.branches(param(req, 'id')))
   app.get('/api/projects/:id/diff', async (req, reply) => {

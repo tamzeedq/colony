@@ -8,7 +8,7 @@ import { useStore } from '@/store/store'
 import { QUEST_STATUS, ROLES } from '@/design/status'
 import { Bar, Segmented, inputCls } from '@/components/ui/controls'
 import { Button } from '@/components/ui/primitives'
-import { useDiff, DiffFileButton, ReviewDiff } from '@/components/review/DiffView'
+import { useDiff, DiffFileButton, ReviewDiff, secretFlags, isFlagged } from '@/components/review/DiffView'
 import { diffTotals } from '@/lib/diff'
 import { ago, cx } from '@/lib/util'
 import type { MergeRequestStatus } from '@/types/colony'
@@ -44,6 +44,8 @@ export function ReviewLive() {
   const t = diffTotals(files)
   const cur = files[Math.min(file, Math.max(0, files.length - 1))]
   const st = STATUS[mr.status] ?? STATUS.pending
+  const flags = files.map(secretFlags)
+  const flagged = files.filter((_, i) => isFlagged(flags[i]))
 
   const approve = async () => {
     setBusy('approve'); setFailed(false)
@@ -75,6 +77,11 @@ export function ReviewLive() {
         <section aria-label="Summary" className="border-b border-line-soft bg-well px-6 py-3.5">
           <div className="mb-1 text-[11px] uppercase tracking-[.12em] text-st-think">Summary · {requester?.callsign ?? 'you'}</div>
           <p className="m-0 max-w-[880px] whitespace-pre-wrap text-[14px] leading-relaxed text-ink">{summary}</p>
+        </section>
+      )}
+      {flagged.length > 0 && (
+        <section role="alert" aria-label="Secrets" className="border-b border-st-error/50 bg-st-error/10 px-6 py-2.5 text-[13px] text-st-error">
+          ⚠ <b>Possible secrets in this branch:</b> {flagged.map((f) => f.path).join(', ')}. Keys belong in env vars or .env.local, never in the repo; send it back unless you are sure these are placeholders.
         </section>
       )}
       <div className="flex flex-1 flex-wrap">
@@ -118,7 +125,7 @@ export function ReviewLive() {
             {diff.status === 'loading' && <p className="m-0 text-xs text-ink-dim">Loading diff…</p>}
             {diff.status === 'error' && <p className="m-0 text-xs text-st-error">✕ {diff.error} <button type="button" onClick={diff.reload} className="ml-1 text-ink underline">Retry</button></p>}
             {diff.status === 'ok' && !files.length && <p className="m-0 text-xs text-ink-dim">No differences from main.</p>}
-            {files.map((f, i) => <DiffFileButton key={f.path} file={f} selected={f === cur} prefix={`${i < file ? '✓' : f === cur ? '▸' : '·'} `} onClick={() => setFile(i)} />)}
+            {files.map((f, i) => <DiffFileButton key={f.path} file={f} flags={flags[i]} selected={f === cur} prefix={`${i < file ? '✓' : f === cur ? '▸' : '·'} `} onClick={() => setFile(i)} />)}
           </section>
         </aside>
         <main className="flex min-w-0 flex-[999_1_640px] flex-col">
@@ -128,7 +135,7 @@ export function ReviewLive() {
             <Segmented label="Diff view" value={view} onChange={setView} options={[{ id: 'unified', label: 'Unified' }, { id: 'split', label: 'Split' }]} />
           </div>
           <div className="flex-1 overflow-auto px-5.5 py-4">
-            {cur ? <ReviewDiff file={cur} view={view} /> : <p className="text-sm text-ink-dim">{diff.status === 'ok' ? 'Nothing to show.' : diff.status === 'error' ? 'The diff could not be loaded.' : 'Loading…'}</p>}
+            {cur ? <ReviewDiff file={cur} view={view} flags={flags[files.indexOf(cur)]} /> : <p className="text-sm text-ink-dim">{diff.status === 'ok' ? 'Nothing to show.' : diff.status === 'error' ? 'The diff could not be loaded.' : 'Loading…'}</p>}
           </div>
           <div className="sticky bottom-0 border-t border-line-soft bg-well px-5.5 py-3.5">
             {(mr.status === 'pending' || (mr.status === 'approved' && failed)) && (

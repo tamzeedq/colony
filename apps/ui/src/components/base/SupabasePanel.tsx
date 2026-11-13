@@ -38,7 +38,7 @@ export function SupabasePanel({ project }: { project: Project }) {
   const live = mode === 'live'
   const sb = project.supabase
   const [migrations, setMigrations] = useState<SupabaseMigration[] | null>(null)
-  const [busy, setBusy] = useState<'' | SupabaseAction | 'studio'>('')
+  const [busy, setBusy] = useState<'' | SupabaseAction | 'studio' | 'storage'>('')
   const [error, setError] = useState('')
   const [confirmReset, setConfirmReset] = useState(false)
 
@@ -94,6 +94,20 @@ export function SupabasePanel({ project }: { project: Project }) {
     }
   }
 
+  // Storage runs unless turned off; an older provisioned stack without the field counts as on.
+  const storageOn = sb.storage !== false
+  const toggleStorage = async (storage: boolean) => {
+    setBusy('storage'); setError('')
+    try {
+      const r = await endpoints.setSupabaseStorage(project.id, storage)
+      merge({ storage, ...infoFrom(r) })
+    } catch (e) {
+      setError(`Storage ${storage ? 'on' : 'off'} failed · ${errorMessage(e)}`)
+    } finally {
+      setBusy('')
+    }
+  }
+
   const view = STATUS_VIEW[sb.status] ?? STATUS_VIEW.none
   const provisioning = sb.status === 'provisioning'
   const locked = provisioning || !!busy
@@ -144,6 +158,12 @@ export function SupabasePanel({ project }: { project: Project }) {
             <label className={cx('flex items-center gap-1.5 text-xs text-ink-soft', locked && 'pointer-events-none opacity-50')}>
               <Switch on={!!sb.studio} onChange={(v) => void toggleStudio(v)} label="Run Supabase Studio" />
               Studio
+            </label>
+          )}
+          {sb.status !== 'none' && (
+            <label title="Storage API at /storage/v1 (buckets and file uploads, about 160 MB). Image transformations stay off." className={cx('flex items-center gap-1.5 text-xs text-ink-soft', locked && 'pointer-events-none opacity-50')}>
+              <Switch on={storageOn} onChange={(v) => void toggleStorage(v)} label="Run Supabase Storage" />
+              Storage
             </label>
           )}
           {sb.status !== 'none' && !confirmReset && (

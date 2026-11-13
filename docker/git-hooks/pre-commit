@@ -1,0 +1,62 @@
+#!/bin/sh
+# Colony pre-commit secret scan (feedback item 6). Installed as the global core.hooksPath in
+# the agent image, so every commit an agent makes passes through it. It blocks commits that
+# add .env files (other than .env.example / .sample / .template), key or certificate files,
+# or added lines with secret-shaped strings. The patterns mirror packages/shared/src/secrets.ts.
+
+found=0
+report() {
+  if [ "$found" -eq 0 ]; then
+    echo "Commit blocked: it would add secrets." >&2
+    echo "" >&2
+  fi
+  found=1
+  echo "  $1" >&2
+}
+
+# Files being added or modified (not deleted).
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+for f in $files; do
+  base=$(basename "$f")
+  case "$base" in
+    .env.example|.env.sample|.env.template|.env.dist) ;;
+    .env|.env.*) report "$f: env file (keep values in .env.local, which is git-ignored, and commit only .env.example)" ;;
+    *.pem|*.key|*.p12|*.pfx|*.jks|*.keystore) report "$f: key or certificate file" ;;
+    id_rsa|id_dsa|id_ecdsa|id_ed25519) report "$f: SSH private key" ;;
+  esac
+done
+
+# Added lines with secret-shaped strings (values are not printed).
+patterns='-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|sk-ant-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}|sb_(secret|publishable)_[A-Za-z0-9_-]{8,}|(AKIA|ASIA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|xox[abprs]-[A-Za-z0-9-]{10,}'
+tab=$(printf '\t')
+hits=$(git diff --cached -U0 --no-color --diff-filter=ACMR | awk '
+  /^\+\+\+ / { file = substr($0, 7); next }
+  /^@@/ { split($3, a, ","); line = substr(a[1], 2) + 0; next }
+  /^\+/ { print file ":" line "\t" substr($0, 2); line++; next }
+' | grep -E -e "${tab}.*(${patterns})" | cut -f1)
+if [ -n "$hits" ]; then
+  if [ "$found" -eq 0 ]; then
+    echo "Commit blocked: it would add secrets." >&2
+    echo "" >&2
+  fi
+  found=1
+  echo "$hits" | while IFS= read -r h; do
+    echo "  $h: secret-shaped string" >&2
+  done
+fi
+
+if [ "$found" -ne 0 ]; then
+  echo "" >&2
+  echo "Read keys from environment variables at runtime, keep local values in .env.local (git-ignored)," >&2
+  echo "and commit only placeholders (.env.example). Unstage the files above (git restore --staged <file>)" >&2
+  echo "and remove the values, then commit again." >&2
+  exit 1
+fi
+
+# Chain to the repository's own pre-commit hook, if it has one.
+gitdir=$(git rev-parse --git-dir 2>/dev/null)
+if [ -n "$gitdir" ] && [ -x "$gitdir/hooks/pre-commit" ]; then
+  exec "$gitdir/hooks/pre-commit" "$@"
+fi
+exit 0

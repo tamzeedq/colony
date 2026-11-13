@@ -50,6 +50,7 @@ Merged work goes back to GitHub only when the commander clicks. Agents never see
   - **mode `push`:** fast-forward push of Colony's `main` to `base`. It is refused if that would not be a fast-forward.
   - **How the push runs:** inside the git container, as a one-off `git push` with the token passed per command (`-c http.extraHeader=…` via env). It is never written to the repo config.
   - **Afterwards:** an activity event records the result, and the last publish is kept on the project.
+  - **Secrets guard:** when a merge the commander approved added `.env*` / key files or secret-shaped lines (recorded at merge time), publish answers 409 `secrets_found` with the files and lines (values masked). `{ "acknowledgeSecrets": true }` publishes anyway.
 - **UI:** a "Publish to GitHub" button in the Infra panel, with status and a link to the PR.
 
 ## 4. Cost analytics

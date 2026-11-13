@@ -12,11 +12,12 @@ import { useAlertPrefs, setCategoryPref, type AlertCategory } from '@/lib/alertP
 import { useSound } from '@/hooks/useSound'
 import { SpendUsage } from './SpendUsage'
 import { GithubSettings } from './GithubSettings'
+import { KeepAwakeCard, SecuritySettings } from './SecuritySettings'
 
 const SECTIONS = [
   { id: 'limits', g: '◷', label: 'Limits & budgets' }, { id: 'spend', g: '▤', label: 'Spend & usage' },
   { id: 'alerts', g: '♪', label: 'Alerts & sound' },
-  { id: 'providers', g: '◈', label: 'Providers & keys' }, { id: 'github', g: '⑂', label: 'GitHub' },
+  { id: 'providers', g: '◈', label: 'Providers & keys' }, { id: 'github', g: '⑂', label: 'GitHub' }, { id: 'security', g: '⛨', label: 'Security' },
   { id: 'docker', g: '▣', label: 'Docker & host' }, { id: 'teams', g: '⬡', label: 'Team templates' },
   { id: 'roles', g: '☰', label: 'Role library' }, { id: 'keys', g: '⌨', label: 'Keyboard' },
 ]
@@ -41,6 +42,7 @@ export function Settings() {
         {section === 'alerts' && <AlertsSection />}
         {section === 'providers' && <Providers />}
         {section === 'github' && <GithubSettings />}
+        {section === 'security' && <SecuritySettings />}
         {section === 'docker' && <Docker />}
         {section === 'teams' && <Teams />}
         {section === 'roles' && <Roles />}
@@ -387,6 +389,7 @@ function Docker() {
         {f.map(([l, v, h]) => <Field key={l} label={l} hint={h}><input defaultValue={v} readOnly={mode === 'live'} className={cx(inputCls, 'font-mono text-[13px]', mode === 'live' && 'text-ink-muted')} /></Field>)}
         {mode === 'live' && <p className="col-span-2 m-0 text-xs text-ink-dim">Read-only here; the control plane's config sets these.</p>}
       </section>
+      <KeepAwakeCard />
     </>
   )
 }

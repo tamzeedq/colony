@@ -2,6 +2,7 @@
 // it with a stub InfraDriver and a temp DB.
 
 import Fastify, { type FastifyInstance } from 'fastify'
+import { registerAdminRoutes } from './admin'
 import { AgentManager } from './agents'
 import { AnalyticsService, registerAnalyticsRoutes } from './analytics'
 import type { Config } from './config'
@@ -9,6 +10,7 @@ import { Db } from './db'
 import { GithubService, registerGithubRoutes } from './github'
 import { GuardService } from './guards'
 import { registerRoutes } from './http'
+import { KeepAwake, registerKeepAwakeRoutes, type KeepAwakeOptions } from './keepawake'
 import { LoopDetector } from './loops'
 import { registerMcp } from './mcp'
 import { QuestService } from './quests'
@@ -20,6 +22,7 @@ import type { InfraDriver } from './infra/types'
 import { MergeService, ProjectService } from './projects'
 import { ProviderService, type FetchLike } from './providers'
 import { reconcile, StatsPoller } from './reconcile'
+import { redactEvent, SecretValues } from './redact'
 import { RoleLibrary } from './roles'
 import { Store } from './store'
 import { TerminalHub } from './terminal'
@@ -38,6 +41,11 @@ export interface AppOptions {
   quiet?: boolean
   /** fetch used for provider connection tests (tests inject a fake). */
   fetch?: FetchLike
+  /** Keep-awake helper options (tests inject a spawner). With poll: false and no spawner, the
+   *  helper is a no-op so tests never start a real process. */
+  keepAwake?: KeepAwakeOptions
+  /** Where the rotated admin token's pairing link is printed (default stdout). */
+  print?: (line: string) => void
 }
 
 export interface ColonyApp {
@@ -58,6 +66,8 @@ export interface ColonyApp {
   teamCheck: TeamCheckService
   analytics: AnalyticsService
   github: GithubService
+  keepAwake: KeepAwake
+  secrets: SecretValues
   /** Reconcile with Docker and start listening. Returns the bound port. */
   start(port?: number, host?: string): Promise<number>
   /** Graceful shutdown. Agent containers keep running and reconnect to the next instance. */
@@ -73,6 +83,9 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
 
   const db = new Db(config.dbPath)
   const store = new Store(db, config)
+  // Every ActivityEvent is scrubbed of known secret values and secret-shaped strings (redact.ts).
+  const secrets = new SecretValues(db, config)
+  store.redactEvent = (ev) => redactEvent(ev, secrets.values())
   const roles = new RoleLibrary(config.rolesDir, log.warn)
   const agents = new AgentManager(store, infra, config, roles, log)
   const guards = new GuardService(store, agents)
@@ -96,6 +109,12 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
     if (a.role !== 'orchestrator') quests.notifyOrchestrator(a.projectId, `${a.callsign} ${reason}. The commander has been alerted; reassign its quest if this blocks progress.`)
   }
   const github = new GithubService(store, config, infra, opts.fetch)
+  const noSpawn = opts.poll === false && !opts.keepAwake?.spawner
+  const keepAwake = new KeepAwake(store, db, {
+    log, ...opts.keepAwake,
+    ...(noSpawn ? { spawner: () => ({ kill: () => {}, onExit: () => {} }) } : {}),
+  })
+  store.keepAwake = () => keepAwake.state()
   const terminals = new TerminalHub(config, store, infra, log)
   const stats = new StatsPoller(store, infra, config.statsIntervalMs, log, config.agentCpus)
   const teamCheck = new TeamCheckService(store, agents, infra)
@@ -110,17 +129,19 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const analytics = new AnalyticsService(db, store)
   registerAnalyticsRoutes(fastify, analytics)
   registerGithubRoutes(fastify, { github, store })
+  registerAdminRoutes(fastify, { config, print: opts.print })
+  registerKeepAwakeRoutes(fastify, keepAwake)
   registerMcp(fastify, { store, agents, quests, merges, infra, supabase })
   const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
   return {
-    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, checkpoints, analytics, github, teamCheck,
+    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, checkpoints, analytics, github, teamCheck, keepAwake, secrets,
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
       await supabase.reconcile()
       guards.checkSessionRollover()
       await fastify.listen({ port, host })
-      if (opts.poll !== false) { stats.start(); loops.start(); supabase.startTimer() }
+      if (opts.poll !== false) { stats.start(); loops.start(); supabase.startTimer(); keepAwake.start() }
       const addr = fastify.server.address()
       return typeof addr === 'object' && addr ? addr.port : port
     },
@@ -128,6 +149,7 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
       stats.stop()
       loops.stop()
       supabase.stopTimer()
+      keepAwake.stop()
       agents.closeAll()
       await terminals.close()
       sockets.close()

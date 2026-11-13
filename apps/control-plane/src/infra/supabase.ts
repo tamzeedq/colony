@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import type Dockerode from 'dockerode'
+import { maskSecrets } from '@colony/shared'
 import { execIn } from './exec'
 import { assertSlug, names } from './validate'
 
@@ -29,7 +30,7 @@ export type SupabaseState = 'running' | 'stopped' | 'none'
 export interface SupabaseDriver {
   /** Write the workdir (if needed) and start the stack on the slot's ports, attach kong and db
    *  to colony-proj-<slug> (aliases supabase-kong / supabase-db), wait for health. */
-  start(slug: string, opts: { slot: number; studio: boolean; timeoutMs?: number }): Promise<SupabaseStack>
+  start(slug: string, opts: { slot: number; studio: boolean; storage?: boolean; timeoutMs?: number }): Promise<SupabaseStack>
   /** Stop the stack. With wipe, its data volumes are deleted too. */
   stop(slug: string, opts?: { wipe?: boolean }): Promise<void>
   /** From the db container: running, stopped (exists but not running), none (no container). */
@@ -55,10 +56,15 @@ export function slotPorts(basePort: number, slot: number) {
   }
 }
 
-/** Services left out of `supabase start`. Studio mode also runs studio + postgres-meta. */
-export function excludedServices(studio: boolean): string[] {
+/** Services left out of `supabase start`. Studio mode also runs studio + postgres-meta;
+ *  storage (default on) runs storage-api. imgproxy (image transformations) stays out. */
+export function excludedServices(studio: boolean, storage = true): string[] {
   const all = ['studio', 'realtime', 'storage-api', 'imgproxy', 'postgres-meta', 'mailpit', 'logflare', 'vector', 'edge-runtime', 'supavisor']
-  return studio ? all.filter((s) => s !== 'studio' && s !== 'postgres-meta') : all
+  return all.filter((s) => {
+    if (studio && (s === 'studio' || s === 'postgres-meta')) return false
+    if (storage && s === 'storage-api') return false
+    return true
+  })
 }
 
 export const supabaseProjectId = (slug: string) => `colony-${slug}`
@@ -106,7 +112,7 @@ export function patchConfig(toml: string, slug: string, ports: ReturnType<typeof
 
 /** Strip anything that looks like a key or JWT from CLI output before it reaches an alert. */
 export function redact(text: string): string {
-  return text
+  return maskSecrets(text)
     .replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, '[redacted]')
     .replace(/\bsb_(publishable|secret)_[A-Za-z0-9_-]+/g, '[redacted]')
     .replace(/((?:KEY|SECRET|TOKEN)\S*\s*[=:]\s*)\S+/gi, '$1[redacted]')
@@ -243,11 +249,11 @@ export function createCliSupabaseDriver(o: CliSupabaseOptions): SupabaseDriver {
   }
 
   return {
-    async start(slug, { slot, studio, timeoutMs = 15 * 60_000 }) {
+    async start(slug, { slot, studio, storage = true, timeoutMs = 15 * 60_000 }) {
       assertSlug(slug)
       const deadline = Date.now() + timeoutMs
       const dir = await ensureWorkdir(slug, slot)
-      const r = await cli(['start', '--workdir', dir, '-x', excludedServices(studio).join(',')], timeoutMs)
+      const r = await cli(['start', '--workdir', dir, '-x', excludedServices(studio, storage).join(',')], timeoutMs)
       if (r.code !== 0) throw fail('supabase start', r)
       await attach(slug)
       const stack = await info(slug)

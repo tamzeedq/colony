@@ -16,11 +16,16 @@ RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
 # control plane, so local and agent tooling agree.
 RUN npm install -g supabase@3.1.0 && npm cache clean --force && supabase --version
 
+# Pre-commit secret scan for every repo (feedback item 6): root-owned, so agents cannot edit it.
+COPY --chown=root:root git-hooks/pre-commit /opt/colony/git-hooks/pre-commit
+RUN chmod 0755 /opt/colony/git-hooks/pre-commit
+
 USER node
 WORKDIR /workspace
 RUN git config --global user.name "Colony Agent" \
  && git config --global user.email "agent@colony.local" \
- && git config --global init.defaultBranch main
+ && git config --global init.defaultBranch main \
+ && git config --global core.hooksPath /opt/colony/git-hooks
 
 # Agent runner (bundled from packages/agent-runner: `npm run build -w @colony/agent-runner`)
 COPY --chown=root:root runner/runner.mjs /opt/colony/runner.mjs

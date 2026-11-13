@@ -8,6 +8,7 @@ import type { InfraDriver, MergeResult } from './infra/types'
 import { githubConfigFromRepoUrl } from './github'
 import type { QuestService } from './quests'
 import type { SupabaseService } from './supabase'
+import { scanDiff, secretScanKey } from './redact'
 import { newId, nowIso, type Store } from './store'
 
 export interface CreateProjectInput {
@@ -191,12 +192,22 @@ export class MergeService {
     return next
   }
 
+  /** The commander may approve a branch Merge Review flagged; remember what it carried so a
+   *  GitHub publish of main can refuse (github.ts). Never blocks the merge itself. */
+  private async recordSecretScan(mr: MergeRequest, slug: string) {
+    try {
+      const scan = scanDiff(await this.infra.diff(slug, mr.branch))
+      if (!scan.ok) this.store.db.kvSet(secretScanKey(mr.id), { files: scan.files, lines: scan.lines })
+    } catch { /* no diff (branch gone): nothing to record */ }
+  }
+
   /** Merge an approved request. Refuses unless canMergeToMain() passes. */
   async merge(id: string): Promise<{ mergeRequest: MergeRequest; result: MergeResult }> {
     const mr = this.get(id)
     if (!canMergeToMain(mr)) throw new HttpError(403, 'not_approved', 'merging to main requires a recorded human approval')
     const prec = this.store.projects.get(mr.projectId)
     if (!prec) throw notFound('project')
+    await this.recordSecretScan(mr, prec.slug)
     let result: MergeResult
     try {
       result = await this.infra.mergeToMain(prec.slug, mr.branch, `Merge ${mr.branch} (approved by you at ${mr.approvedAt})`)

@@ -213,7 +213,7 @@ describe('provisioning and lifecycle', () => {
     const s = sbOf(c, p.id)
     assert.equal(s.studio, true)
     assert.equal(s.studioUrl, `http://127.0.0.1:${slotPorts(55300, s.slot!).studio}`)
-    assert.ok(c.sb.calls.at(-1)!.endsWith('studio=true'))
+    assert.match(c.sb.calls.at(-1)!, /studio=true storage=true$/)
   })
 
   test('a failed start sets error and raises an alert; a retry clears both', async () => {
