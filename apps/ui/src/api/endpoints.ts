@@ -1,5 +1,5 @@
 // Typed calls for every control-plane route the UI uses (docs/phase2.md "UI action → API").
-import type { ActivityEvent, Agent, Alert, Analytics, AnalyticsDays, GithubConfig, GithubTokenStatus, Guards, ID, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
+import type { ActivityEvent, Agent, Alert, Analytics, AnalyticsDays, GithubConfig, GithubTokenStatus, Guards, ID, KeepAwakeMode, KeepAwakeState, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
 import { api, apiText, enc } from './client'
 
 export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string }
@@ -47,6 +47,7 @@ export const endpoints = {
   supabaseAction: (projectId: ID, action: SupabaseAction) =>
     api<Partial<SupabaseInfo> | undefined>('POST', `/api/projects/${enc(projectId)}/supabase/${action}`, action === 'reset' ? { confirm: true } : undefined),
   setSupabaseStudio: (projectId: ID, studio: boolean) => api<Partial<SupabaseInfo> | undefined>('PATCH', `/api/projects/${enc(projectId)}/supabase`, { studio }),
+  setSupabaseStorage: (projectId: ID, storage: boolean) => api<Partial<SupabaseInfo> | undefined>('PATCH', `/api/projects/${enc(projectId)}/supabase`, { storage }),
 
   // quests (docs/phase3.md "Quest lifecycle")
   createQuest: (projectId: ID, body: QuestInput) => api<Quest>('POST', `/api/projects/${enc(projectId)}/quests`, body),
@@ -80,6 +81,11 @@ export const endpoints = {
   patchProjectGithub: (projectId: ID, patch: { repo?: string | null; base?: string; mode?: GithubConfig['mode'] }) =>
     api<Project>('PATCH', `/api/projects/${enc(projectId)}/github`, patch),
   publishGithub: (projectId: ID) => api<GithubPublishResult>('POST', `/api/projects/${enc(projectId)}/github/publish`),
+
+  // Security and host (feedback items 6 and 16)
+  rotateAdminToken: () => api<{ ok: true; pairingHint: string; envOverride?: boolean }>('POST', '/api/admin/rotate-token'),
+  keepAwake: () => api<KeepAwakeState>('GET', '/api/keep-awake'),
+  setKeepAwake: (mode: KeepAwakeMode) => api<KeepAwakeState>('PUT', '/api/keep-awake', { mode }),
 }
 
 export interface GithubPublishResult { url?: string; branch: string; sha: string; mode: GithubConfig['mode']; mergeRequests: number }

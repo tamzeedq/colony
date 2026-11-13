@@ -1,6 +1,6 @@
 # Phase 4: Dev Supabase per project
 
-Goal: a base can have its own local Supabase stack (Postgres, Auth, REST). Backend agents build against it over the project network. The commander can see its status, open Studio, list applied migrations, and stop, start or wipe it. Nothing leaves the machine and nothing costs money.
+Goal: a base can have its own local Supabase stack (Postgres, Auth, REST, Storage). Backend agents build against it over the project network. The commander can see its status, open Studio, list applied migrations, and stop, start or wipe it. Nothing leaves the machine and nothing costs money.
 
 Background: `spikes/02-supabase/README.md` proved the approach on this host.
 
@@ -20,7 +20,9 @@ The host runs the Supabase CLI, pinned to **3.1.0** as a dependency of the contr
   - The lowest slot that no other project holds and whose ports are free on 127.0.0.1 is chosen.
   - Host ports exist for the commander only (Studio, local psql). Agents use Docker DNS.
 - **Start:** `supabase start --workdir <dir> -x <excluded>`.
-  - By default only db, auth, rest and kong run (about 200 MB, about 22 s warm).
+  - By default db, auth, rest, kong and storage-api run (about 200 MB plus about 160 MB for storage, about 22 s warm).
+  - With `storage: false`, storage-api is left out too (db, auth, rest and kong only). New stacks start with `storage: true`; a provisioned stack without the field (from before the switch) counts as on.
+  - `imgproxy` (image transformations, `[storage.image_transformation]`) always stays out.
   - With `studio: true`, Studio and pg_meta also run.
   - Afterwards Colony attaches `supabase_kong_*` and `supabase_db_*` to `colony-proj-<slug>`, with aliases `supabase-kong` and `supabase-db`.
   - It reads `status -o json` for the keys. Raw CLI output is never logged, because it contains keys.
@@ -52,13 +54,14 @@ These are set when the base is provisioned (status not `none`) and the agent con
 |---|---|
 | `SUPABASE_URL` | `http://supabase-kong:8000` |
 | `SUPABASE_ANON_KEY` | read from `supabase status` |
-| `SUPABASE_SERVICE_ROLE_KEY` | read from `supabase status` |
+| `SUPABASE_SERVICE_ROLE_KEY` | read from `supabase status`; only orchestrator, backend, devops and custom agents (frontend, QA and researcher get the anon key only) |
 | `DATABASE_URL` | `postgresql://postgres:postgres@supabase-db:5432/postgres` |
 
 The keys are the CLI's well-known local dev keys. Isolation comes from the network: only kong and db are attached to `colony-proj-<slug>`, and agents never join `supabase_network_*`. Keys are kept in the project record but left out of the UI snapshot.
 
 The role prompt gets a short "Dev backend" section when the base is provisioned. It covers:
-- the URLs and environment variables
+- the URLs and environment variables (and which keys this role holds)
+- whether Storage is available (`$SUPABASE_URL/storage/v1`), or that it is off and the orchestrator should ask the commander to turn it on
 - migrations live in `supabase/migrations/` in the repo, and are applied with `supabase db push --db-url "$DATABASE_URL"` (or `psql`)
 - the stack is dev-only and may be wiped
 
@@ -68,7 +71,7 @@ The agent image now includes `postgresql-client` and the Supabase CLI (same pin)
 
 | Tool | Input | Effect |
 |---|---|---|
-| `get_backend` | none | Status, the env values above, and host URLs (for agents spawned before provisioning). |
+| `get_backend` | none | Status, the env values above (keys narrowed by role), `storage` / `storageUrl`, and host URLs (for agents spawned before provisioning). |
 | `list_migrations` | none | Rows from `supabase_migrations.schema_migrations` (version, name). |
 | `gen_types` | none | `supabase gen types typescript --local` run on the host. Returns the TypeScript (clipped to 200 KB). |
 
@@ -79,20 +82,20 @@ When the stack becomes running, the orchestrator gets a `[Colony]` note.
 | Route | Effect |
 |---|---|
 | `POST /api/projects` | New optional `supabase: boolean` (and `supabaseStudio?: boolean`). `true` provisions in the background. |
-| `GET /api/projects/:id/supabase` | `{ status, url, studioUrl, dbUrl, studio, migrations: [{version,name}], error? }`. Migrations come back only when the stack is running. |
+| `GET /api/projects/:id/supabase` | `{ status, url, studioUrl, dbUrl, studio, storage, migrations: [{version,name}], error? }`. Migrations come back only when the stack is running. |
 | `POST /api/projects/:id/supabase/start` | Provision or start. 202. |
 | `POST /api/projects/:id/supabase/stop` | Stop and keep the data. 202. |
 | `POST /api/projects/:id/supabase/reset` | Wipe the data and start again. 202. `{confirm: true}` required. |
-| `PATCH /api/projects/:id/supabase` | `{ studio: boolean }`. Applies on the next start, or restarts now if running. |
+| `PATCH /api/projects/:id/supabase` | `{ studio?: boolean, storage?: boolean }` (at least one). Applies on the next start, or restarts now if running (data kept). |
 
-`Project.supabase` gains `studio?: boolean`, `slot?: number`, `dbUrl?: string` and `error?: string`. `url` is the host API URL (`http://127.0.0.1:<api>`). `studioUrl` is set only when Studio is on and running. `migration` is the latest applied version.
+`Project.supabase` gains `studio?: boolean`, `storage?: boolean`, `slot?: number`, `dbUrl?: string` and `error?: string`. `url` is the host API URL (`http://127.0.0.1:<api>`). `studioUrl` is set only when Studio is on and running. `migration` is the latest applied version.
 
 ## UI
 
 - **Found Base:** the "Provision dev Supabase" toggle is sent with the create request.
 - **Base → Infra panel:**
   - status, the API URL and psql URL (with copy buttons), an "Open Studio" link when Studio is on, and the migrations list
-  - Start/Stop, a Studio toggle, and Reset behind a confirmation
+  - Start/Stop, Studio and Storage toggles, and Reset behind a confirmation
 
 ## Tests
 

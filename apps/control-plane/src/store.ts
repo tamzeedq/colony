@@ -7,10 +7,11 @@ import { randomBytes } from 'node:crypto'
 import {
   BUILTIN_MODELS, BUILTIN_MODEL_IDS, PROTOCOL_VERSION,
   type ActivityEvent, type Agent, type Alert, type Guards, type MergeRequest, type PlanUsage,
-  type Project, type ProviderConfig, type Quest, type Resources, type Snapshot, type UiStreamMessage,
+  type KeepAwakeState, type Project, type ProviderConfig, type Quest, type Resources, type Snapshot, type UiStreamMessage,
 } from '@colony/shared'
 import type { Config } from './config'
 import type { Db, Row } from './db'
+import { redactEvent } from './redact'
 
 // ── internal records ──────────────────────────────────────────────────────────
 
@@ -195,7 +196,12 @@ export class Store {
 
   // ── events ──
   /** Persist (upsert by id) and broadcast an activity event. */
-  addEvent(ev: ActivityEvent) {
+  /** Scrubs secrets from every event before it is stored or broadcast (redact.ts; app.ts adds
+   *  the known secret values). */
+  redactEvent: (ev: ActivityEvent) => ActivityEvent = (ev) => redactEvent(ev)
+  /** Store and broadcast an event. Returns the event as stored (redacted). */
+  addEvent(input: ActivityEvent): ActivityEvent {
+    const ev = this.redactEvent(input)
     this.db.run(
       `INSERT INTO events(id, agent_id, project_id, at, json) VALUES(?, ?, ?, ?, ?)
        ON CONFLICT(agent_id, id) DO UPDATE SET json = excluded.json, at = excluded.at`,
@@ -203,6 +209,7 @@ export class Store {
     )
     this.trimEvents(ev.agentId)
     this.emit({ type: 'event', event: ev })
+    return ev
   }
   private trimCounter = new Map<string, number>()
   private trimEvents(agentId: string) {
@@ -405,6 +412,7 @@ export class Store {
       spendMonthUsd: this.spendMonth(),
       containers: { running: this.runningContainers, max: this.config.maxContainers },
       host: { ...host, docker: this.dockerUp ? 'running' : 'down' },
+      ...(this.keepAwake ? { keepAwake: this.keepAwake() } : {}),
     }
   }
 
@@ -420,6 +428,9 @@ export class Store {
     const tot = totalmem()
     return { cpuPct: this.hostCpuPct, memUsedGb: gb(tot - freemem()), memTotalGb: gb(tot) }
   }
+
+  /** Keep-awake state for resources (app.ts points this at the KeepAwake service). */
+  keepAwake?: () => KeepAwakeState
 
   /** Provider list for snapshots; app.ts points this at the ProviderService. */
   providerList: () => ProviderConfig[] = () => {

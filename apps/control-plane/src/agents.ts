@@ -50,10 +50,12 @@ export interface AgentHooks {
 
 /** Dev Supabase details for agent containers (docs/phase4.md). */
 export interface BackendProvider {
-  /** Env vars for agents in this project, or undefined when no stack is provisioned. */
-  env(projectId: string): Record<string, string> | undefined
+  /** Env vars for agents in this project, or undefined when no stack is provisioned. With a
+   *  role, keys are narrowed to what that role needs (the service-role key only for roles that
+   *  administer the backend). */
+  env(projectId: string, role?: RoleId): Record<string, string> | undefined
   /** "Dev backend" section appended to the system prompt, or undefined. */
-  prompt(projectId: string): string | undefined
+  prompt(projectId: string, role?: RoleId): string | undefined
 }
 
 const CALLSIGN_WORDS = [
@@ -159,7 +161,7 @@ export class AgentManager {
 
   /** The stored role prompt plus sections that depend on the project's current infra. */
   systemPrompt(a: Agent): string {
-    const extra = this.backend?.prompt(a.projectId)
+    const extra = this.backend?.prompt(a.projectId, a.role)
     return extra ? `${a.rolePrompt.trimEnd()}\n\n${extra.trim()}\n` : a.rolePrompt
   }
 
@@ -177,7 +179,7 @@ export class AgentManager {
       COLONY_MODEL: model?.cliModel ?? a.model,
       COLONY_SYSTEM_PROMPT_B64: Buffer.from(this.systemPrompt(a), 'utf8').toString('base64'),
     }
-    Object.assign(env, this.backend?.env(a.projectId) ?? {})
+    Object.assign(env, this.backend?.env(a.projectId, a.role) ?? {})
     // Colony's MCP tools (docs/phase3.md), authenticated with the same per-agent token.
     const mcp = { mcpServers: { colony: { type: 'http', url: this.config.publicMcpUrl, headers: { Authorization: `Bearer ${token}` } } } }
     env.COLONY_MCP_CONFIG_B64 = Buffer.from(JSON.stringify(mcp), 'utf8').toString('base64')
@@ -292,8 +294,8 @@ export class AgentManager {
         return
       }
       case 'event': {
-        const ev: ActivityEvent = { ...msg.event, agentId, projectId: rec.agent.projectId }
-        this.store.addEvent(ev)
+        // Stored redacted (redact.ts): use what was stored for the card and the hooks too.
+        const ev = this.store.addEvent({ ...msg.event, agentId, projectId: rec.agent.projectId })
         const action = actionFor(ev)
         if (action && action !== rec.agent.currentAction) this.store.patchAgent(agentId, { currentAction: action })
         this.hooks.afterEvent?.(ev)

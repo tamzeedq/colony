@@ -10,6 +10,7 @@ import type { SupabaseService } from './supabase'
 import type { InfraDriver } from './infra/types'
 import type { MergeService } from './projects'
 import { isPriority, isQuestStatus, type QuestService } from './quests'
+import { describeFindings, scanDiff, SECRETS_ADVICE } from './redact'
 import { newId, nowIso, type AgentRecord, type Store } from './store'
 
 export interface McpDeps {
@@ -254,6 +255,8 @@ export function buildTools(d: McpDeps): Tool[] {
         const diff = await infra.diff(slug(me), branch)
         const head = [`Branch ${branch}: ${info.aheadOfMain} commit(s) ahead of main, ${info.behindMain} behind (head ${info.sha.slice(0, 10)}).`]
         if (info.behindMain > 0) head.push('It is behind main: ask the worker to rebase before you request the merge.')
+        const scan = scanDiff(diff)
+        if (!scan.ok) head.push(`WARNING: it adds secrets or secret files; request_merge will refuse it until they are gone:\n${describeFindings(scan)}\n${SECRETS_ADVICE}`)
         head.push(`To test it: git fetch origin && git stash -u; git checkout --detach origin/${branch} (then go back with git checkout -).`)
         return `${head.join('\n')}\n\n${clip(diff || '(no differences)', 60_000)}`
       },
@@ -273,6 +276,11 @@ export function buildTools(d: McpDeps): Tool[] {
         const info = (await infra.listBranches(slug(me))).find((b) => b.name === branch)
         if (!info) throw new ToolError(`branch ${branch} is not on the git server`)
         if (info.aheadOfMain === 0) throw new ToolError(`branch ${branch} has nothing ahead of main`)
+        // Secrets guard (feedback item 6): no .env / key files or secret-shaped lines reach main.
+        const scan = scanDiff(await infra.diff(slug(me), branch))
+        if (!scan.ok) {
+          throw new ToolError(`Refused: ${branch} adds secrets or secret files, so it cannot be merged:\n${describeFindings(scan)}\n\n${SECRETS_ADVICE}\nAsk ${q.assigneeId ? store.agents.get(q.assigneeId)?.agent.callsign ?? 'the worker' : 'the worker'} to fix it, review again, then request the merge.`)
+        }
         const existing = [...store.mergeRequests.values()].find((m) => m.projectId === me.agent.projectId && m.branch === branch && m.status === 'pending')
         if (existing) return { mergeRequest: existing, note: 'A merge request for this branch is already waiting for the commander.' }
         const mr = merges.create({ projectId: me.agent.projectId, branch, requestedBy: me.agent.id, questId: q.id, summary: s(a, 'summary', true, 4000) })
@@ -296,7 +304,7 @@ export function buildTools(d: McpDeps): Tool[] {
       inputSchema: obj({}),
       run: (_a, me) => {
         if (!supabase) return { status: 'none', env: null }
-        return supabase.backendFor(me.agent.projectId)
+        return supabase.backendFor(me.agent.projectId, me.agent.role)
       },
     },
     {

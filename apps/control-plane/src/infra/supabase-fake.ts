@@ -2,7 +2,7 @@
 
 import { slotPorts, type SupabaseDriver, type SupabaseMigrationRow, type SupabaseStack, type SupabaseState } from './supabase'
 
-interface FakeStack { running: boolean; slot: number; studio: boolean; migrations: SupabaseMigrationRow[] }
+interface FakeStack { running: boolean; slot: number; studio: boolean; storage: boolean; migrations: SupabaseMigrationRow[] }
 
 export class FakeSupabase implements SupabaseDriver {
   readonly stacks = new Map<string, FakeStack>()
@@ -21,12 +21,13 @@ export class FakeSupabase implements SupabaseDriver {
     return { apiPort: p.api, dbPort: p.db, ...(s.studio ? { studioPort: p.studio } : {}), anonKey: 'anon-test-key', serviceRoleKey: 'service-test-key' }
   }
 
-  async start(slug: string, opts: { slot: number; studio: boolean }) {
-    this.calls.push(`start ${slug} slot=${opts.slot} studio=${opts.studio}`)
+  async start(slug: string, opts: { slot: number; studio: boolean; storage?: boolean }) {
+    const storage = opts.storage ?? true
+    this.calls.push(`start ${slug} slot=${opts.slot} studio=${opts.studio} storage=${storage}`)
     if (this.gate) await this.gate
     if (this.failNextStart) { const m = this.failNextStart; this.failNextStart = undefined; throw new Error(m) }
     const prev = this.stacks.get(slug)
-    const s: FakeStack = { running: true, slot: opts.slot, studio: opts.studio, migrations: prev?.migrations ?? [] }
+    const s: FakeStack = { running: true, slot: opts.slot, studio: opts.studio, storage, migrations: prev?.migrations ?? [] }
     this.stacks.set(slug, s)
     return this.stack(slug, s)
   }

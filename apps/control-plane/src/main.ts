@@ -1,31 +1,14 @@
 // Colony control plane entry point: `npm run dev -w @colony/control-plane`.
 
-import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { ensureAdminToken, pairingLink } from './admin'
 import { createApp } from './app'
 import { loadConfig } from './config'
 import { createDockerDriver } from './infra/docker'
 import { createCliSupabaseDriver } from './infra/supabase'
 
-/** Agent containers can reach the host port (even a loopback-only bind, via Docker Desktop),
- *  so the REST API and UI stream always require an admin token. It lives only on the host,
- *  in <dataDir>/admin-token, which no container can read. */
-function ensureAdminToken(dataDir: string): string {
-  const file = join(dataDir, 'admin-token')
-  if (existsSync(file)) {
-    const t = readFileSync(file, 'utf8').trim()
-    if (t.length >= 32) return t
-  }
-  mkdirSync(dataDir, { recursive: true })
-  const t = randomBytes(32).toString('hex')
-  writeFileSync(file, t + '\n', { mode: 0o600 })
-  return t
-}
-
-function pairingLink(uiUrl: string, adminToken: string): string {
-  return `${uiUrl.replace(/\/+$/, '')}/#pair=${encodeURIComponent(adminToken)}`
-}
+// Agent containers can reach the host port (even a loopback-only bind, via Docker Desktop), so
+// the REST API and UI stream always require an admin token (admin.ts).
 
 async function main() {
   const config = loadConfig()

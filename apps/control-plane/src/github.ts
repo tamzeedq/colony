@@ -9,12 +9,13 @@
 
 import { join } from 'node:path'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import type { GithubConfig, GithubPublish, GithubTokenStatus, MergeRequest, Project } from '@colony/shared'
+import { maskSecrets, type GithubConfig, type GithubPublish, type GithubTokenStatus, type MergeRequest, type Project } from '@colony/shared'
 import type { Config } from './config'
 import { badRequest, conflict, HttpError, notFound } from './errors'
 import type { InfraDriver } from './infra/types'
 import { isGithubRepo, isValidBranchName } from './infra/validate'
 import { SecretBox, type FetchLike } from './providers'
+import { describeFindings, SECRETS_ADVICE, secretScanKey } from './redact'
 import { newId, nowIso, type ProjectRecord, type Store } from './store'
 
 const API = 'https://api.github.com'
@@ -185,11 +186,33 @@ export class GithubService {
     return [...this.store.mergeRequests.values()].filter((m) => m.projectId === projectId && m.status === 'merged' && !done.has(m.id))
   }
 
-  async publish(projectId: string): Promise<PublishResult> {
+  /** Secret findings recorded when flagged merge requests were merged (MergeService), for the
+   *  merges this publish would push. */
+  secretFindings(projectId: string) {
+    const files: { path: string; kind: string }[] = []
+    const lines: { path: string; line?: number; kind: string; preview?: string }[] = []
+    for (const m of this.unpublished(projectId)) {
+      const s = this.store.db.kvGet<{ files?: typeof files; lines?: typeof lines }>(secretScanKey(m.id))
+      if (s) { files.push(...(s.files ?? [])); lines.push(...(s.lines ?? [])) }
+    }
+    return { files, lines }
+  }
+
+  async publish(projectId: string, opts: { acknowledgeSecrets?: boolean } = {}): Promise<PublishResult> {
     const rec = this.rec(projectId)
     const cfg = rec.project.github
     if (!cfg?.repo) throw new HttpError(400, 'no_repo', 'no GitHub repo set for this project: set owner/name in the Infra panel')
     if (!this.stored().token) throw new HttpError(400, 'no_token', 'no GitHub token: add one in Settings → GitHub')
+    const found = this.secretFindings(projectId)
+    if ((found.files.length || found.lines.length) && !opts.acknowledgeSecrets) {
+      const msg = `Refused: main contains merges that added secrets or secret files, and publishing would push them to GitHub:
+${describeFindings(found)}
+
+${SECRETS_ADVICE} ` +
+        'If these are placeholders or the values are already rotated, publish again with {"acknowledgeSecrets": true}.'
+      this.record(projectId, 'GitHub publish refused: main contains secret-shaped strings or secret files')
+      throw new HttpError(409, 'secrets_found', msg, found)
+    }
     if (!this.infra.pushToRemote) throw new HttpError(501, 'not_supported', 'this infra driver cannot push to GitHub')
     if (this.busy.has(projectId)) throw conflict('a publish is already running for this project')
     this.busy.add(projectId)
@@ -355,6 +378,9 @@ export function registerGithubRoutes(app: FastifyInstance, d: { github: GithubSe
 
   app.post('/api/projects/:id/github/publish', async (req) => {
     if (!store.projects.has(pid(req))) throw notFound('project')
-    return github.publish(pid(req))
+    const b = bodyOf(req)
+    for (const k of Object.keys(b)) if (k !== 'acknowledgeSecrets') throw badRequest(`unknown field '${k}'`)
+    if (b.acknowledgeSecrets !== undefined && typeof b.acknowledgeSecrets !== 'boolean') throw badRequest("'acknowledgeSecrets' must be a boolean")
+    return github.publish(pid(req), { acknowledgeSecrets: b.acknowledgeSecrets === true })
   })
 }
