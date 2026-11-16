@@ -21,7 +21,7 @@ export interface State {
 export type Action =
   | { type: 'agentStatus'; id: ID; status: AgentStatus; action?: string }
   | { type: 'pause'; ids: ID[] } | { type: 'resume'; ids: ID[] } | { type: 'kill'; ids: ID[] } | { type: 'restart'; id: ID; memMb?: number }
-  | { type: 'pauseAll' }
+  | { type: 'pauseAll'; workersOnly?: boolean }
   | { type: 'takeControl'; id: ID } | { type: 'handBack'; id: ID; note?: string }
   | { type: 'setModel'; id: ID; model: Agent['model'] }
   | { type: 'configAgent'; id: ID; rolePrompt?: string; budgetCapUsd?: number }
@@ -67,6 +67,9 @@ export const emptyUi = (): State['ui'] => ({ selected: [], overlay: null, muted:
 const mapAgents = (s: State, ids: ID[], f: (a: Agent) => Agent): State =>
   ({ ...s, agents: s.agents.map((a) => (ids.includes(a.id) ? f(a) : a)) })
 
+const requestPause = (x: Agent): Agent =>
+  x.status === 'error' || x.status === 'done' || x.status === 'paused' || x.pauseRequested ? x : { ...x, pauseRequested: true, pausedBy: 'you' }
+
 const upsert = <T extends { id: ID }>(list: T[], item: T, prepend = false): T[] =>
   list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? { ...x, ...item } : x)) : prepend ? [item, ...list] : [...list, item]
 
@@ -80,10 +83,13 @@ const looksLikeAgent = (p: Partial<Agent>): p is Agent => !!(p.id && p.projectId
 
 export function reducer(s: State, a: Action): State {
   switch (a.type) {
-    case 'agentStatus': return mapAgents(s, [a.id], (x) => ({ ...x, status: a.status, currentAction: a.action ?? x.currentAction }))
-    case 'pause': return mapAgents(s, a.ids, (x) => (x.status === 'error' ? x : { ...x, status: 'paused' }))
-    case 'pauseAll': return { ...s, agents: s.agents.map((x) => (x.status === 'error' ? x : { ...x, status: 'paused' })) }
-    case 'resume': return mapAgents(s, a.ids, (x) => (x.status === 'paused' ? { ...x, status: 'idle', controller: 'agent' } : x))
+    case 'agentStatus': return mapAgents(s, [a.id], (x) => ({ ...x, status: a.status, currentAction: a.action ?? x.currentAction, ...(a.status === 'paused' ? { pauseRequested: false } : {}) }))
+    // Pausing is a request: the agent shows "pausing" until its runner reports paused (stream).
+    case 'pause': return mapAgents(s, a.ids, requestPause)
+    case 'pauseAll': return { ...s, agents: s.agents.map((x) => (a.workersOnly && x.role === 'orchestrator' ? x : requestPause(x))) }
+    case 'resume': return mapAgents(s, a.ids, (x) => (x.status === 'paused'
+      ? { ...x, status: 'idle', controller: 'agent', pauseRequested: false, pausedBy: undefined }
+      : x.pauseRequested ? { ...x, pauseRequested: false, pausedBy: undefined } : x))
     case 'kill': return {
       ...s, agents: s.agents.filter((x) => !a.ids.includes(x.id)),
       projects: s.projects.map((p) => ({ ...p, agentIds: p.agentIds.filter((id) => !a.ids.includes(id)) })),
@@ -158,7 +164,8 @@ export function reducer(s: State, a: Action): State {
         const full = { ...a.patch, id: a.id }
         return looksLikeAgent(full) ? { ...s, agents: [...s.agents, full], projects: linkAgent(s.projects, full) } : s
       }
-      return mapAgents(s, [a.id], (x) => ({ ...x, ...a.patch, id: x.id }))
+      // The server sends `pausedBy: null` to clear it.
+      return mapAgents(s, [a.id], (x) => ({ ...x, ...a.patch, id: x.id, ...('pausedBy' in a.patch && !a.patch.pausedBy ? { pausedBy: undefined } : {}) }))
     }
     case 'upsertAgent': return { ...s, agents: upsert(s.agents, a.agent), projects: linkAgent(s.projects, a.agent) }
     case 'upsertProject': return { ...s, projects: upsert(s.projects, a.project) }

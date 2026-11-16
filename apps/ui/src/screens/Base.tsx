@@ -7,6 +7,7 @@ import { QuestBoard } from '@/components/base/QuestBoard'
 import { SupabasePanel } from '@/components/base/SupabasePanel'
 import { GithubPanel } from '@/components/base/GithubPanel'
 import { ActivityFeed } from '@/components/feed/ActivityFeed'
+import { PauseToggle } from '@/components/hud/PauseControls'
 import { Button } from '@/components/ui/primitives'
 import { Bar, inputCls } from '@/components/ui/controls'
 import { useMediaQuery, WIDE } from '@/hooks/useMediaQuery'
@@ -43,7 +44,7 @@ export function Base() {
         <div className="flex-1" />
         <span className="text-xs text-ink-muted">This base: <b className="text-ink">{Math.round(sessionShare(state, project) * 100)}%</b> of session · <b className="text-ink">{usd(project.spendTodayUsd)}</b> today</span>
         <Link to={`/spawn?project=${project.key}`} className="rounded-md bg-ink px-3.5 py-2 text-[13px] font-semibold text-ground no-underline">+ Spawn agent</Link>
-        <Button onClick={() => dispatch({ type: 'pause', ids: agents.filter((a) => a.status !== 'paused').map((a) => a.id) })}>‖ Pause base</Button>
+        <PauseToggle scope={{ kind: 'base', projectId: project.id, name: project.name }} size="base" />
       </div>
 
       <form className="flex flex-wrap items-center gap-3 border-b border-line-soft bg-well px-6 py-3" onSubmit={(e) => { e.preventDefault(); setSent('sending'); void dispatch({ type: 'setGoal', projectId: project.id, goal }).then((ok) => setSent(ok ? 'ok' : 'error')) }}>

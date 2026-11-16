@@ -6,6 +6,7 @@ import { ToastStack, CriticalBanner } from '@/components/alerts/Toasts'
 import { AlertEffects } from '@/components/alerts/AlertEffects'
 import { ReconnectingBanner } from '@/components/states/Connection'
 import { ShortcutOverlay, CommandPalette } from '@/components/states/Overlays'
+import { PausedChip, PauseToggle, PauseEffects, PauseBar, ShutdownButton, ShutdownDialog } from '@/components/hud/PauseControls'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { useMediaQuery, ULTRAWIDE } from '@/hooks/useMediaQuery'
 import { cx, untilLabel, usd } from '@/lib/util'
@@ -81,7 +82,9 @@ export function AppShell() {
         <div className="flex-1" />
         <ResourceHud />
         <NeedsYouCounter />
-        <button type="button" onClick={() => dispatch({ type: 'pauseAll' })} className="rounded-md border border-line bg-raised px-3 py-1.5 text-[13px]">‖ Pause all</button>
+        <PausedChip />
+        <PauseToggle scope={{ kind: 'all' }} kbd="⇧Space" />
+        <ShutdownButton />
         <button type="button" aria-label="Keyboard shortcuts" onClick={() => dispatch({ type: 'overlay', overlay: 'shortcuts' })}
           className="h-8 w-8 rounded-md border border-line font-mono text-[13px] text-ink-muted">?</button>
       </header>
@@ -95,6 +98,9 @@ export function AppShell() {
       <AlertEffects />
       <ShortcutOverlay />
       <CommandPalette />
+      <PauseEffects />
+      <PauseBar />
+      <ShutdownDialog />
     </div>
   )
 }

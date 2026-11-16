@@ -22,7 +22,7 @@ export function AgentCard({ agent, selected, onToggle }: { agent: Agent; selecte
           <div className="mt-0.5 text-xs text-ink-muted">{ROLES[agent.role].name} · {project?.name}</div>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5"><StatusBadge status={agent.status} /><ModelBadge model={agent.model} /></div>
+      <div className="flex flex-wrap items-center gap-1.5"><StatusBadge status={agent.status} pausing={!!agent.pauseRequested} /><ModelBadge model={agent.model} /></div>
       <div className="min-h-9 text-[13px] leading-snug">{quest ? `${quest.title} — ` : ''}{agent.currentAction ?? 'No current task'}</div>
       {agent.branch && <div className="truncate font-mono text-[11px] text-ink-dim">⎇ {agent.branch}</div>}
       <div className="grid grid-cols-3 gap-2.5 border-t border-line-soft pt-2.5">

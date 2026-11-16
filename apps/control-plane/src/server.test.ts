@@ -290,7 +290,10 @@ describe('agents and runners', () => {
     const { agent, runner } = await spawnConnected(c, project.id, { role: 'qa' })
     assert.equal((await api(c, 'POST', `/api/agents/${agent.id}/pause`)).status, 200)
     await runner.waitFor((m) => m.type === 'pause')
-    assert.equal(status(c, agent.id), 'paused')
+    assert.equal(status(c, agent.id), 'idle') // paused only once the runner reports it
+    assert.equal(c.app.store.toAgent(c.app.store.agents.get(agent.id)!).pauseRequested, true)
+    runner.send({ type: 'status', agentId: agent.id, status: 'paused' })
+    await waitUntil(() => status(c, agent.id) === 'paused')
     assert.equal((await api(c, 'POST', `/api/agents/${agent.id}/resume`, {})).status, 200)
     await runner.waitFor((m) => m.type === 'resume')
     assert.equal(status(c, agent.id), 'idle')

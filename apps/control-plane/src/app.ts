@@ -37,6 +37,8 @@ export interface AppOptions {
   quiet?: boolean
   /** fetch used for provider connection tests (tests inject a fake). */
   fetch?: FetchLike
+  /** Called after POST /api/admin/shutdown has closed the app. Default: process.exit(0). Tests inject a spy. */
+  onShutdown?: () => void
 }
 
 export interface ColonyApp {
@@ -103,14 +105,18 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   }
 
   const fastify = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 })
-  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests, supabase, checkpoints })
+  let closeApp: () => Promise<void> = async () => {}
+  registerRoutes(fastify, {
+    config, store, agents, projects, merges, guards, providers, quests, supabase, checkpoints,
+    close: () => closeApp(), onShutdown: opts.onShutdown,
+  })
   const analytics = new AnalyticsService(db, store)
   registerAnalyticsRoutes(fastify, analytics)
   registerGithubRoutes(fastify, { github, store })
   registerMcp(fastify, { store, agents, quests, merges, infra, supabase })
   const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
-  return {
+  const result: ColonyApp = {
     fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, checkpoints, analytics, github,
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
@@ -133,4 +139,6 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
       db.close()
     },
   }
+  closeApp = () => result.close()
+  return result
 }

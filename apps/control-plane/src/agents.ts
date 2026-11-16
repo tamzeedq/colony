@@ -300,7 +300,10 @@ export class AgentManager {
         return
       }
       case 'status':
-        if (msg.status !== rec.agent.status) this.store.patchAgent(agentId, { status: msg.status })
+        if (msg.status !== rec.agent.status) {
+          const reportedPause = msg.status === 'paused' && rec.internal.desired === 'paused'
+          this.store.patchAgent(agentId, { status: msg.status, ...(reportedPause ? { currentAction: rec.internal.pausedBy && rec.internal.pausedBy !== 'you' ? `Paused (${rec.internal.pausedBy.replace('_', ' ')})` : 'Paused by you' } : {}) })
+        }
         return
       case 'usage': {
         const tokens = msg.inputTokens + msg.outputTokens
@@ -383,30 +386,45 @@ export class AgentManager {
     return { delivered: this.isConnected(agentId), queued: !this.isConnected(agentId) }
   }
 
-  pause(agentId: string, by: 'you' | 'budget' | 'plan_usage' | 'project_budget' = 'you') {
+  /** `graceful`: the commander's pause. A connected runner is asked to pause and the agent only
+   *  becomes 'paused' when the runner reports it (until then it is `pauseRequested`). Guards and
+   *  take-control pause immediately. A disconnected agent is paused at once and the pause is
+   *  re-applied when its runner connects. */
+  pause(agentId: string, by: 'you' | 'budget' | 'plan_usage' | 'project_budget' = 'you', opts: { graceful?: boolean } = {}) {
     const rec = this.get(agentId)
-    this.send(agentId, { type: 'pause' })
-    this.store.patchAgent(agentId, { status: 'paused', currentAction: by === 'you' ? 'Paused by you' : `Paused (${by.replace('_', ' ')})` }, { desired: 'paused', pausedBy: by })
+    const label = by === 'you' ? 'Paused by you' : `Paused (${by.replace('_', ' ')})`
+    const sent = this.send(agentId, { type: 'pause' })
+    if (opts.graceful && sent && rec.agent.status !== 'paused') {
+      this.store.patchAgent(agentId, { currentAction: 'Pausing after the current step' }, { desired: 'paused', pausedBy: by })
+    } else {
+      this.store.patchAgent(agentId, { status: 'paused', currentAction: label }, { desired: 'paused', pausedBy: by })
+    }
     return this.store.toAgent(rec)
   }
 
   resume(agentId: string) {
     const rec = this.get(agentId)
     const sent = this.send(agentId, { type: 'resume' })
-    this.store.patchAgent(agentId, { status: sent ? 'idle' : rec.agent.status === 'paused' ? 'booting' : rec.agent.status, currentAction: '' }, { desired: 'run', pausedBy: undefined })
+    // Only a paused agent changes status; one that was still pausing just keeps running.
+    const status = rec.agent.status === 'paused' ? (sent ? 'idle' : 'booting') : rec.agent.status
+    this.store.patchAgent(agentId, { status, currentAction: '' }, { desired: 'run', pausedBy: undefined })
     return this.store.toAgent(rec)
   }
 
-  /** Pause every live agent that is not already paused. */
-  pauseAll() {
+  /** Pause every live agent that is not already paused (`workersOnly`: leave orchestrators running).
+   *  `skipped` lists agents that cannot be paused (crashed or finished). */
+  pauseAll(opts: { workersOnly?: boolean } = {}) {
     const paused: string[] = []
+    const skipped: string[] = []
     for (const rec of [...this.store.agents.values()]) {
       const a = rec.agent
-      if (a.status === 'error' || a.status === 'done' || rec.internal.desired === 'paused') continue
-      this.pause(a.id, 'you')
+      if (opts.workersOnly && a.role === 'orchestrator') continue
+      if (a.status === 'error' || a.status === 'done') { skipped.push(a.id); continue }
+      if (rec.internal.desired === 'paused') continue
+      this.pause(a.id, 'you', { graceful: true })
       paused.push(a.id)
     }
-    return { paused }
+    return { paused, skipped }
   }
 
   /** The commander takes the wheel: pause the runner and mark the agent as controlled by you. */

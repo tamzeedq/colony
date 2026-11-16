@@ -231,7 +231,10 @@ describe('project PATCH, pause-all, take control, request changes', () => {
     assert.ok(r.body.paused.includes(a.agent.id) && r.body.paused.includes(b.agent.id))
     await a.runner.waitFor((m) => m.type === 'pause')
     await b.runner.waitFor((m) => m.type === 'pause')
-    assert.equal(c.app.store.agents.get(a.agent.id)!.agent.status, 'paused')
+    // the agent only counts as paused once its runner reports it
+    assert.equal(c.app.store.agents.get(a.agent.id)!.agent.status, 'idle')
+    a.runner.send({ type: 'status', agentId: a.agent.id, status: 'paused' } satisfies RunnerMessage)
+    await waitUntil(() => c.app.store.agents.get(a.agent.id)!.agent.status === 'paused')
     // already paused → not paused again
     const again = await api<{ paused: string[] }>(c, 'POST', '/api/agents/pause-all')
     assert.deepEqual(again.body.paused, [])

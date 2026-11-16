@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/store/store'
 import { KeyHint } from '@/components/ui/primitives'
+import { togglePauseAll, requestPause, openShutdown } from '@/store/pauseControls'
 import { cx } from '@/lib/util'
 
 const KEYS: [string, [string, string][]][] = [
@@ -51,7 +52,9 @@ export function CommandPalette() {
       ...state.agents.map((a) => ({ label: `Inspect ${a.callsign}`, hint: a.role, run: () => dispatch({ type: 'inspect', id: a.id }) })),
       { label: 'Spawn agent', hint: 'S', run: go('/spawn') }, { label: 'Found new base', hint: 'N', run: go('/new') },
       { label: 'Open inbox', hint: 'G I', run: go('/inbox') }, { label: 'Settings · Limits & budgets', hint: '', run: go('/settings/limits') },
-      { label: 'Pause everything', hint: '⇧ Space', run: () => dispatch({ type: 'pauseAll' }) },
+      { label: 'Pause / resume everything', hint: '⇧ Space', run: togglePauseAll },
+      { label: 'Pause workers only', hint: '', run: () => requestPause({ kind: 'all' }, true) },
+      { label: 'Shut down Colony…', hint: '', run: openShutdown },
       { label: 'Downshift workers to Haiku', hint: '', run: () => dispatch({ type: 'downshift' }) },
       { label: 'Ambient wall mode', hint: 'W', run: go('/ambient') },
     ]

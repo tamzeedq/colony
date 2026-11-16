@@ -174,7 +174,13 @@ export class Store {
     rec.agent = { ...rec.agent, ...patch }
     if (internal) rec.internal = { ...rec.internal, ...internal }
     this.saveAgent(rec)
-    if (Object.keys(patch).length) this.emit({ type: 'agent_delta', agentId: id, patch })
+    // Deltas carry the derived pause fields too (`pausedBy: null` clears it on the client).
+    const pauseChanged = 'status' in patch || (!!internal && ('desired' in internal || 'pausedBy' in internal))
+    if (Object.keys(patch).length || pauseChanged) {
+      const d = pauseChanged ? this.toAgent(rec) : undefined
+      const out = d ? { ...patch, pauseRequested: !!d.pauseRequested, pausedBy: d.pausedBy ?? null } : patch
+      this.emit({ type: 'agent_delta', agentId: id, patch: out as Partial<Agent> })
+    }
   }
   deleteAgent(id: string) {
     this.agents.delete(id)
@@ -375,6 +381,8 @@ export class Store {
     return {
       ...a,
       level, xp,
+      ...(rec.internal.desired === 'paused' ? { pausedBy: rec.internal.pausedBy ?? 'you' } : {}),
+      ...(rec.internal.desired === 'paused' && live && a.status !== 'paused' ? { pauseRequested: true } : {}),
       sessionShare: this.sessionShareOf([a.id]),
       uptimeSec: live && Number.isFinite(started) ? Math.max(0, Math.round((Date.now() - started) / 1000)) : 0,
     }
