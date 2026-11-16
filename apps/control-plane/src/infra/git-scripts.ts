@@ -64,11 +64,14 @@ git for-each-ref --format='%(refname:strip=2) %(objectname)' refs/heads | while 
 done
 `
 
-/** $1 = branch. Unified diff main...branch (changes on the branch since the merge base). */
+/** $1 = branch, $2 = base branch (default main). Unified diff base...branch (changes on the
+ *  branch since the merge base). */
 export const DIFF = `set -eu
 cd ${REPO}
+B="\${2:-main}"
 git rev-parse --verify --quiet "refs/heads/$1^{commit}" >/dev/null || { echo "no such branch: $1" >&2; exit 3; }
-exec git diff --no-color "refs/heads/main...refs/heads/$1" --
+git rev-parse --verify --quiet "refs/heads/$B^{commit}" >/dev/null || { echo "no such branch: $B" >&2; exit 3; }
+exec git diff --no-color "refs/heads/$B...refs/heads/$1" --
 `
 
 /** Exit codes for MERGE. */

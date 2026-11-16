@@ -14,6 +14,7 @@ import { AgentIcon } from '@/components/agent/AgentIcon'
 import { Tabs, Segmented, Bar, inputCls } from '@/components/ui/controls'
 import { FeedRow } from '@/components/feed/ActivityFeed'
 import { Checkpoints } from '@/components/agent/Checkpoints'
+import { PreviewControl } from '@/components/agent/PreviewControl'
 import { containerCpu, cx, usd } from '@/lib/util'
 
 type Tab = 'feed' | 'term' | 'changes' | 'task' | 'config'
@@ -149,6 +150,7 @@ function Controls({ agent }: { agent: Agent }) {
     <div className="flex flex-wrap items-center gap-1.5 border-b border-line-soft px-5 py-2.5">
       <Button kbd="Space" onClick={() => dispatch({ type: paused ? 'resume' : 'pause', ids: [agent.id] })}>{paused ? '▸ Resume' : '‖ Pause'}</Button>
       <Button onClick={() => dispatch({ type: 'restart', id: agent.id })}>↻ Restart</Button>
+      <PreviewControl agent={agent} />
       {!confirmKill
         ? <Button variant="danger" onClick={() => setConfirmKill(true)}>✕ Kill</Button>
         : <span className="flex items-center gap-1.5 rounded-md border border-st-error/50 px-2 py-1 text-xs text-st-error">
@@ -241,10 +243,14 @@ function Changes() {
 }
 
 function LiveChanges({ agent }: { agent: Agent }) {
-  const diff = useDiff(agent.projectId, agent.branch)
+  const { state } = useStore()
+  // Compare with main (default) or another agent's branch in the same base (feedback #19).
+  const [base, setBase] = useState('main')
+  const others = state.agents.filter((x) => x.projectId === agent.projectId && x.id !== agent.id && x.branch).map((x) => ({ branch: x.branch!, callsign: x.callsign }))
+  const diff = useDiff(agent.projectId, agent.branch, base === 'main' ? undefined : base)
   const [sel, setSel] = useState(0)
   if (!agent.branch) return <p className="text-sm text-ink-dim">{agent.callsign} has no branch yet. Changes show here once its workspace is ready.</p>
-  if (diff.status === 'loading' || diff.status === 'idle') return <p className="text-sm text-ink-dim">Loading diff of ⎇ {agent.branch} vs main…</p>
+  if (diff.status === 'loading' || diff.status === 'idle') return <p className="text-sm text-ink-dim">Loading diff of ⎇ {agent.branch} vs {base}…</p>
   if (diff.status === 'error') return (
     <p className="text-sm text-st-error">✕ Couldn’t load the diff · {diff.error} <button type="button" onClick={diff.reload} className="ml-2 rounded-sm border border-line px-2 py-0.5 text-xs text-ink">↻ Retry</button></p>
   )
@@ -255,7 +261,10 @@ function LiveChanges({ agent }: { agent: Agent }) {
     <div className="flex flex-wrap gap-3.5">
       <div className="flex max-w-[260px] flex-[1_1_220px] flex-col gap-0.5">
         <div className="mb-1.5 flex items-center gap-1 text-xs text-ink-dim">
-          <span>vs main · {files.length} files · <span className="text-st-done">+{t.added}</span> <span className="text-st-error">−{t.removed}</span></span>
+          <span>vs <select value={base} onChange={(e) => setBase(e.target.value)} aria-label="Compare with" className="rounded-xs border border-line bg-well px-1 py-0.5 text-xs text-ink">
+            <option value="main">main</option>
+            {others.map((o) => <option key={o.branch} value={o.branch}>{o.callsign} ({o.branch})</option>)}
+          </select> · {files.length} files · <span className="text-st-done">+{t.added}</span> <span className="text-st-error">−{t.removed}</span></span>
           <button type="button" onClick={diff.reload} aria-label="Reload diff" className="ml-auto px-1 text-ink-muted">↻</button>
         </div>
         {files.map((f, i) => <DiffFileButton key={f.path} file={f} selected={f === cur} onClick={() => setSel(i)} />)}

@@ -53,7 +53,7 @@ export function Spawn() {
       if (orch) {
         // The orchestrator chooses class and model and spawns with spawn_agent; the new unit
         // arrives over the stream once it does.
-        await endpoints.requestWorker(project.id, { callsign: name.trim() || undefined, budgetCapUsd: cap > 0 ? cap : undefined, task: task.trim() || undefined })
+        await endpoints.requestWorker(project.id, { callsign: name.trim() || undefined, budgetCapUsd: cap > 0 ? cap : undefined, task: task.trim() || undefined, iconSeed })
         nav(`/base/${project.key}`)
         return
       }
@@ -119,7 +119,7 @@ export function Spawn() {
         <section aria-label="Preview" className="flex min-w-0 flex-[1_1_320px] flex-col items-center gap-3.5 border-r border-line-soft bg-well bg-[radial-gradient(#1A212A_1px,transparent_1px)] bg-[length:20px_20px] px-6 py-5.5">
           <div className="text-label self-start">Recruit preview</div>
           <div className="relative mt-2.5 grid h-[168px] w-[168px] place-items-center rounded-[28px] border-2 border-line-strong bg-raised">
-            {orch ? <span className="font-display text-5xl font-bold text-ink-soft">?</span> : <Emblem seed={iconSeed} size={124} title={`${name} emblem`} />}
+            <Emblem seed={iconSeed} size={124} title={`${name} emblem`} />
             {!orch && <span className="absolute -left-3 top-3 rounded-sm border border-line-strong bg-ground px-1.5 py-0.5 font-mono text-xs font-semibold text-ink-soft">{ROLES[role].code}</span>}
             <span className="absolute -bottom-3 rounded-full border border-line-strong bg-ground px-3 py-0.5 font-display text-xs font-semibold">Lv 1</span>
             {!orch && (

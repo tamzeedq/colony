@@ -91,6 +91,8 @@ export interface FakeDriver extends InfraDriver {
   /** Next mergeToMain returns exactly this (one-shot). */
   nextMergeResult(r: MergeResult): void
   setPing(ok: boolean): void
+  /** Local-access sidecars by container name (feedback #19). */
+  sidecars: Map<string, { slug: string; hostPort: number; agentId?: string; targetPort?: number }>
   /** Shells opened with openShell, in order. */
   shells: FakeShell[]
   /** Answers execInAgent (default: exit 0, empty output). */
@@ -116,6 +118,7 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
     agents: new Map(),
     volumes: new Set(),
     shells: [],
+    sidecars: new Map(),
     pushes: [],
     execHandler: () => ({ exitCode: 0, stdout: '', stderr: '' }),
     nextPushResult(r) {
@@ -250,8 +253,29 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       return res
     },
 
-    async diff(slug, branch) {
-      record('diff', [slug, branch])
+    async exposeRepo(slug, hostPort) {
+      record('exposeRepo', [slug, hostPort])
+      mustProject(slug)
+      self.sidecars.set(names.repoSidecar(slug), { slug, hostPort })
+      return { name: names.repoSidecar(slug) }
+    },
+    async unexposeRepo(slug) {
+      record('unexposeRepo', [slug])
+      self.sidecars.delete(names.repoSidecar(slug))
+    },
+    async startPreview(slug, agentId, targetPort, hostPort) {
+      record('startPreview', [slug, agentId, targetPort, hostPort])
+      mustProject(slug)
+      self.sidecars.set(names.previewSidecar(agentId), { slug, hostPort, agentId, targetPort })
+      return { name: names.previewSidecar(agentId) }
+    },
+    async stopPreview(agentId) {
+      record('stopPreview', [agentId])
+      self.sidecars.delete(names.previewSidecar(agentId))
+    },
+
+    async diff(slug, branch, base) {
+      record('diff', [slug, branch, ...(base ? [base] : [])])
       assertBranch(branch)
       const b = mustProject(slug).branches.get(branch)
       if (!b) throw new Error(`diff ${branch} failed (exit 3): no such branch: ${branch}`)

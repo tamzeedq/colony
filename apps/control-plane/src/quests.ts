@@ -72,13 +72,15 @@ export class QuestService {
 
   /** "Let the Orchestrator decide" in Spawn: ask the orchestrator to choose a worker's class and
    *  model and spawn it with spawn_agent. The commander's callsign/cap/starting quest are passed on. */
-  requestWorker(projectId: string, input: { callsign?: string; budgetCapUsd?: number; task?: string }) {
+  requestWorker(projectId: string, input: { callsign?: string; budgetCapUsd?: number; task?: string; iconSeed?: string }) {
     const prec = this.store.projects.get(projectId)
     if (!prec) throw notFound('project')
     const o = this.orchestratorOf(projectId)
     if (!o) throw conflict('this base has no orchestrator yet: spawn one first, or pick a class yourself')
     const callsign = input.callsign?.trim()
     if (callsign && this.store.callsignTaken(callsign)) throw conflict(`callsign ${callsign} is taken`)
+    // Keep the emblem the commander saw in Spawn for when the orchestrator spawns this callsign.
+    if (callsign && input.iconSeed) this.agents.pendingIconSeeds.set(callsign.toLowerCase(), input.iconSeed)
     const lines = [
       'The commander wants one more worker on this base and asked you to choose its class (role) and model.',
       'Pick what the current plan needs most right now (see list_tasks and list_agents), keeping the team small and the model as cheap as the work allows.',

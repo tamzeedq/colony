@@ -122,6 +122,8 @@ export const names = {
   gitContainer: (slug: string) => `colony-git-${slug}`,
   agentContainer: (agentId: string) => `colony-agent-${agentId}`,
   agentVolume: (agentId: string) => `colony-ws-${agentId}`,
+  repoSidecar: (slug: string) => `colony-repo-${slug}`,
+  previewSidecar: (agentId: string) => `colony-preview-${agentId}`,
 }
 
 /** refs/colony/checkpoints/<agentId>/<ts> or refs/colony/backup/<agentId>/<ts>, and their prefixes. */

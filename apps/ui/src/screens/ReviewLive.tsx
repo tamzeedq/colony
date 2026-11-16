@@ -12,6 +12,7 @@ import { useDiff, DiffFileButton, ReviewDiff, secretFlags, isFlagged } from '@/c
 import { diffTotals } from '@/lib/diff'
 import { ago, cx } from '@/lib/util'
 import type { MergeRequestStatus } from '@/types/colony'
+import { AcceptanceList } from '@/components/quest/AcceptanceList'
 
 const STATUS: Record<MergeRequestStatus, [string, string]> = {
   pending: ['! Needs your approval', 'text-st-you bg-st-you/12 border-st-you/45'],
@@ -100,18 +101,7 @@ export function ReviewLive() {
                 <span className={cx('ml-auto text-[11px] uppercase tracking-[.12em]', qs.text)}>{qs.glyph} {qs.label}</span>
               </div>
               <Link to={`/quest/${quest.id}`} className="block font-display text-[15px] font-semibold leading-snug">{quest.title} →</Link>
-              {quest.acceptance.length > 0 ? (
-                <div className="mt-2.5">
-                  <div className="mb-1.5 flex items-center gap-2 text-xs text-ink-muted">Acceptance · {accDone} of {quest.acceptance.length}</div>
-                  <div className="mb-2"><Bar pct={(accDone / quest.acceptance.length) * 100} className="bg-st-run" h="h-1" /></div>
-                  {quest.acceptance.map((c) => (
-                    <div key={c.text} className="flex gap-2.5 py-0.5 text-[13px]">
-                      <span className={cx('font-mono', c.done ? 'text-st-done' : 'text-ink-dim')}>{c.done ? '✓' : '○'}</span>
-                      <span className={c.done ? '' : 'text-ink-muted'}>{c.text}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="m-0 mt-1.5 text-xs text-ink-dim">No acceptance criteria.</p>}
+              <div className="mt-2.5"><AcceptanceList quest={quest} /></div>
             </section>
           )}
           <section className="rounded-lg border border-line bg-surface px-3.5 py-3 text-[13px] leading-relaxed text-ink-soft">

@@ -81,6 +81,8 @@ export class AgentManager {
   private rateBase: { usedPct: number; at: number; resetsAt: string } | undefined
   hooks: AgentHooks = {}
   backend?: BackendProvider
+  /** Emblem seeds the commander chose in Spawn for a worker the orchestrator will spawn, by callsign. */
+  readonly pendingIconSeeds = new Map<string, string>()
 
   constructor(
     private store: Store,
@@ -142,7 +144,9 @@ export class AgentManager {
     const rolePrompt = this.roles.compose(input.role, { project: p.name, stack: p.stack, goal: p.goal, orchestrator }, input.rolePrompt)
     const budget = input.budgetCapUsd ?? this.config.defaultBudgetCapUsd
     const task = input.task?.trim() || (input.role === 'orchestrator' && p.goal.trim() ? kickoff(p.goal) : '')
-    const iconSeed = input.iconSeed?.trim() || undefined
+    const pending = this.pendingIconSeeds.get(callsign.toLowerCase())
+    if (pending) this.pendingIconSeeds.delete(callsign.toLowerCase())
+    const iconSeed = input.iconSeed?.trim() || pending || undefined
     if (iconSeed && !ICON_SEED_RE.test(iconSeed)) throw badRequest('iconSeed must be 1–32 characters of A–Z, a–z, 0–9 or -')
     const t = nowIso()
     const agent: Agent = {

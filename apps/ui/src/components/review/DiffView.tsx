@@ -19,19 +19,19 @@ export const isFlagged = (f: SecretFlags) => f.file?.level === 'block' || f.line
 
 export type DiffState = { status: 'idle' } | { status: 'loading' } | { status: 'error'; error: string } | { status: 'ok'; files: DiffFile[] }
 
-export function useDiff(projectId?: string, branch?: string) {
+export function useDiff(projectId?: string, branch?: string, base?: string) {
   const [st, setSt] = useState<DiffState>({ status: 'idle' })
   const [n, setN] = useState(0)
   useEffect(() => {
     if (!projectId || !branch) { setSt({ status: 'idle' }); return }
     let live = true
     setSt({ status: 'loading' })
-    endpoints.diff(projectId, branch).then(
+    endpoints.diff(projectId, branch, base).then(
       (text) => { if (live) setSt({ status: 'ok', files: parseUnifiedDiff(text) }) },
       (e) => { if (live) setSt({ status: 'error', error: errorMessage(e) }) },
     )
     return () => { live = false }
-  }, [projectId, branch, n])
+  }, [projectId, branch, base, n])
   const reload = useCallback(() => setN((x) => x + 1), [])
   return { ...st, reload } as DiffState & { reload: () => void }
 }

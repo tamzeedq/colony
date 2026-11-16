@@ -9,6 +9,7 @@ import { errorMessage } from '@/api/client'
 import { Segmented, inputCls } from '@/components/ui/controls'
 import { ago, cx } from '@/lib/util'
 import type { GithubConfig, GithubTokenStatus, Project } from '@/types/colony'
+import { RepoAccessPanel } from './RepoAccessPanel'
 
 const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}\/[A-Za-z0-9._-]{1,100}$/
 const MODES: { id: GithubConfig['mode']; label: string }[] = [{ id: 'pr', label: 'Pull request' }, { id: 'push', label: 'Push' }]
@@ -136,6 +137,7 @@ export function GithubPanel({ project }: { project: Project }) {
           {note && <div role={note.ok ? 'status' : 'alert'} className={cx('mt-2 whitespace-pre-wrap break-words text-xs', note.ok ? 'text-st-done' : 'text-st-error')}>{note.ok ? '✓' : '✕'} {note.text}</div>}
         </>
       )}
+      <RepoAccessPanel project={project} />
     </div>
   )
 }

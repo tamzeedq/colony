@@ -66,7 +66,7 @@ export interface InfraDriver {
   listContainers(): Promise<ContainerInfo[]>
 
   listBranches(slug: string): Promise<BranchInfo[]>
-  diff(slug: string, branch: string): Promise<string>        // unified diff main...branch
+  diff(slug: string, branch: string, base?: string): Promise<string>        // unified diff base...branch (base defaults to main)
 
   /** Merge branch into main inside the git container (no-ff). Callers MUST have checked
    *  canMergeToMain() first; the driver never decides approval itself. */
@@ -92,6 +92,17 @@ export interface InfraDriver {
   /** Move an agent branch to `to` (CAS on `expect`), saving the old head in `backupRef`.
    *  Throws RefRejectedError when a guard fails. Never moves main. */
   resetBranch?(slug: string, branch: string, opts: { to: string; expect: string; backupRef: string; allowAnyTarget?: boolean }): Promise<{ from: string; to: string }>
+
+  // ── optional: local access for the commander (feedback #19) ──
+  // Sidecars from the agent image, hardened like agents, on the project network, with one port
+  // published on 127.0.0.1 only. No host mounts, no Docker socket.
+
+  /** Serve the project's repo read-only (git daemon without receive-pack) on 127.0.0.1:hostPort. */
+  exposeRepo?(slug: string, hostPort: number): Promise<{ name: string }>
+  unexposeRepo?(slug: string): Promise<void>
+  /** Forward 127.0.0.1:hostPort to port `targetPort` of the agent's container (a dev server). */
+  startPreview?(slug: string, agentId: string, targetPort: number, hostPort: number): Promise<{ name: string }>
+  stopPreview?(agentId: string): Promise<void>
 
   // ── optional Phase 6 capability (docs/phase6.md "GitHub") ──
 

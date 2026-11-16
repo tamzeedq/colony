@@ -17,6 +17,7 @@ import { QuestService } from './quests'
 import { SupabaseService } from './supabase'
 import { CheckpointService } from './checkpoints'
 import { TeamCheckService } from './teamcheck'
+import { AccessService } from './access'
 import { unavailableSupabase, type SupabaseDriver } from './infra/supabase'
 import type { InfraDriver } from './infra/types'
 import { MergeService, ProjectService } from './projects'
@@ -64,6 +65,7 @@ export interface ColonyApp {
   supabase: SupabaseService
   checkpoints: CheckpointService
   teamCheck: TeamCheckService
+  access: AccessService
   analytics: AnalyticsService
   github: GithubService
   keepAwake: KeepAwake
@@ -104,7 +106,8 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const checkpoints = new CheckpointService(store, db, infra, agents)
   quests.onCompleted = (q, rec, sha) => checkpoints.onQuestCompleted(q, rec, sha)
   agents.hooks.afterEvent = (ev) => loops.onEvent(ev)
-  agents.hooks.afterRemove = (a) => { loops.forget(a.id); quests.onAgentRemoved(a) }
+  const access = new AccessService(store, infra, agents)
+  agents.hooks.afterRemove = (a) => { loops.forget(a.id); quests.onAgentRemoved(a); access.onAgentRemoved(a.id) }
   agents.hooks.afterCrash = (a, reason) => {
     if (a.role !== 'orchestrator') quests.notifyOrchestrator(a.projectId, `${a.callsign} ${reason}. The commander has been alerted; reassign its quest if this blocks progress.`)
   }
@@ -125,7 +128,7 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   }
 
   const fastify = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 })
-  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests, supabase, checkpoints, teamCheck })
+  registerRoutes(fastify, { config, store, agents, projects, merges, guards, providers, quests, supabase, checkpoints, teamCheck, access })
   const analytics = new AnalyticsService(db, store)
   registerAnalyticsRoutes(fastify, analytics)
   registerGithubRoutes(fastify, { github, store })
@@ -135,9 +138,10 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const sockets = attachWebSockets(fastify.server, { config, store, agents, terminals, log })
 
   return {
-    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, checkpoints, analytics, github, teamCheck, keepAwake, secrets,
+    fastify, db, store, agents, guards, projects, merges, providers, terminals, stats, quests, loops, supabase, checkpoints, analytics, github, teamCheck, keepAwake, secrets, access,
     async start(port = config.port, host = config.bind) {
       await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
+      await access.cleanupLeftovers()
       await supabase.reconcile()
       guards.checkSessionRollover()
       await fastify.listen({ port, host })

@@ -16,6 +16,7 @@ import { assertRepoUrl } from './infra/validate'
 import type { SupabaseService } from './supabase'
 import type { CheckpointService } from './checkpoints'
 import type { TeamCheckService } from './teamcheck'
+import type { AccessService } from './access'
 
 export interface HttpDeps {
   config: Config
@@ -29,6 +30,7 @@ export interface HttpDeps {
   supabase: SupabaseService
   checkpoints: CheckpointService
   teamCheck: TeamCheckService
+  access: AccessService
 }
 
 // ── validation helpers ────────────────────────────────────────────────────────
@@ -141,7 +143,7 @@ export function checkAdmin(config: Config, headers: Record<string, string | stri
 // ── routes ────────────────────────────────────────────────────────────────────
 
 export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
-  const { store, agents, projects, merges, config, guards, providers, quests, supabase, checkpoints, teamCheck } = d
+  const { store, agents, projects, merges, config, guards, providers, quests, supabase, checkpoints, teamCheck, access } = d
 
   // Accept empty JSON bodies (e.g. POST /pause sent with a JSON content type).
   app.removeContentTypeParser('application/json')
@@ -229,9 +231,23 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
   app.get('/api/projects/:id/diff', async (req, reply) => {
     const branch = query(req).branch
     if (!branch || !BRANCH_RE.test(branch)) throw badRequest("query 'branch' is required and must be a valid branch name")
-    const diff = await projects.diff(param(req, 'id'), branch)
+    const base = query(req).base
+    if (base !== undefined && !BRANCH_RE.test(base)) throw badRequest("query 'base' must be a valid branch name")
+    const diff = await projects.diff(param(req, 'id'), branch, base || undefined)
     return reply.type('text/plain; charset=utf-8').send(diff)
   })
+
+  // Local access for the commander (feedback #19): repo read-only on 127.0.0.1, dev-server previews.
+  app.get('/api/projects/:id/repo-access', async (req) => { projects.get(param(req, 'id')); return access.repo(param(req, 'id')) })
+  app.post('/api/projects/:id/repo-access', async (req) => access.openRepo(param(req, 'id')))
+  app.delete('/api/projects/:id/repo-access', async (req) => access.closeRepo(param(req, 'id')))
+  app.get('/api/agents/:id/preview', async (req) => access.preview(param(req, 'id')))
+  app.post('/api/agents/:id/preview', async (req) => {
+    const port = num(body(req), 'port', { min: 1024, max: 65535, int: true })
+    if (port === undefined) throw badRequest("send 'port' (the dev server's port inside the agent's container)")
+    return access.startPreview(param(req, 'id'), port)
+  })
+  app.delete('/api/agents/:id/preview', async (req) => access.stopPreview(param(req, 'id')))
 
   // checkpoints and revert (docs/phase6.md)
   app.get('/api/agents/:id/commits', async (req) => checkpoints.commits(param(req, 'id')))
@@ -276,11 +292,14 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
   // "Let the Orchestrator decide" in Spawn (the orchestrator picks class + model and spawns).
   app.post('/api/projects/:id/worker-requests', async (req, reply) => {
     const b = body(req)
-    for (const k of Object.keys(b)) if (!['callsign', 'budgetCapUsd', 'task'].includes(k)) throw badRequest(`unknown field '${k}'`)
+    for (const k of Object.keys(b)) if (!['callsign', 'budgetCapUsd', 'task', 'iconSeed'].includes(k)) throw badRequest(`unknown field '${k}'`)
+    const iconSeed = str(b, 'iconSeed', { max: 32 })
+    if (iconSeed && !/^[A-Za-z0-9-]{1,32}$/.test(iconSeed)) throw badRequest('iconSeed must be 1–32 characters of A–Z, a–z, 0–9 or -')
     const callsign = str(b, 'callsign', { max: 24 })
     if (callsign && !/^[A-Za-z][A-Za-z0-9]{0,15}-\d{2}$/.test(callsign)) throw badRequest('callsign must look like "Vex-07"')
     return reply.status(202).send(quests.requestWorker(param(req, 'id'), {
       callsign: callsign || undefined, budgetCapUsd: num(b, 'budgetCapUsd', { min: 0, max: 1000 }), task: str(b, 'task', { max: 4000 }) || undefined,
+      iconSeed: iconSeed || undefined,
     }))
   })
   app.post('/api/agents/:id/message', async (req) => {

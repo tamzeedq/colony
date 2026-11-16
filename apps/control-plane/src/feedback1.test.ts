@@ -182,3 +182,18 @@ describe('team check-ins', () => {
     } finally { await teardown(c) }
   })
 })
+
+describe('worker requests keep the emblem from Spawn', () => {
+  test('the orchestrator spawning the requested callsign gets the seed', async () => {
+    const c = await setup()
+    try {
+      const p = (await api<Project>(c, 'POST', '/api/projects', { name: 'Readable' })).body
+      const orch = await member(c, p.id, 'orchestrator')
+      assert.equal((await api(c, 'POST', `/api/projects/${p.id}/worker-requests`, { callsign: 'Fen-12', iconSeed: 'bad seed!' })).status, 400)
+      assert.equal((await api(c, 'POST', `/api/projects/${p.id}/worker-requests`, { callsign: 'Fen-12', iconSeed: 'abc-123' })).status, 202)
+      const s = await call(c, orch.token, 'spawn_agent', { role: 'frontend', callsign: 'Fen-12', model: 'haiku-5.5' })
+      assert.equal(s.isError, false, s.text)
+      assert.equal(c.app.store.agents.get(s.json.agent.id)!.agent.iconSeed, 'abc-123')
+    } finally { await teardown(c) }
+  })
+})

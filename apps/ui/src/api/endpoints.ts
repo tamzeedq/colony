@@ -8,6 +8,11 @@ export interface QuestPatch { status?: Quest['status']; title?: string; brief?: 
 export interface ProjectInput { name: string; goal?: string; stack?: string[]; repoUrl?: string; dailyCapUsd?: number; supabase?: boolean; supabaseStudio?: boolean }
 export type SupabaseAction = 'start' | 'stop' | 'reset'
 
+// Local access (feedback #19)
+export interface RepoAccess { projectId: ID; port: number; url: string; remote: string; commands: string[] }
+export interface PreviewAccess { agentId: ID; targetPort: number; port: number; url: string }
+export interface PreviewInfo { active: PreviewAccess | null; suggestedPorts: number[] }
+
 // Checkpoints and revert (docs/phase6.md §2)
 export interface CommitView { sha: string; at: string; subject: string; inMain: boolean; checkpoint?: string }
 export interface AgentCommits { branch: string; commits: CommitView[]; checkpoints: { ref: string; sha: string; at: string; label: string }[]; lastBackup?: { sha: string; at: string } }
@@ -31,10 +36,17 @@ export const endpoints = {
   agentEvents: (id: ID, limit = 200) => api<ActivityEvent[]>('GET', `${a(id)}/events?limit=${limit}`),
   spawn: (projectId: ID, input: SpawnInput) => api<Agent>('POST', `/api/projects/${enc(projectId)}/agents`, input),
   /** "Let the Orchestrator decide": it picks class + model and spawns the worker itself. */
-  requestWorker: (projectId: ID, input: { callsign?: string; budgetCapUsd?: number; task?: string }) =>
+  requestWorker: (projectId: ID, input: { callsign?: string; budgetCapUsd?: number; task?: string; iconSeed?: string }) =>
     api<{ orchestratorId: ID; orchestrator: string; delivered: boolean }>('POST', `/api/projects/${enc(projectId)}/worker-requests`, input),
   agentCommits: (id: ID) => api<AgentCommits>('GET', `${a(id)}/commits`),
   /** Feedback #8: send the orchestrator a team check-in now. */
+  // Local access (feedback #19)
+  repoAccess: (projectId: ID) => api<RepoAccess | null>('GET', `/api/projects/${enc(projectId)}/repo-access`),
+  openRepoAccess: (projectId: ID) => api<RepoAccess>('POST', `/api/projects/${enc(projectId)}/repo-access`),
+  closeRepoAccess: (projectId: ID) => api('DELETE', `/api/projects/${enc(projectId)}/repo-access`),
+  preview: (agentId: ID) => api<PreviewInfo>('GET', `${a(agentId)}/preview`),
+  startPreview: (agentId: ID, port: number) => api<PreviewAccess>('POST', `${a(agentId)}/preview`, { port }),
+  stopPreview: (agentId: ID) => api('DELETE', `${a(agentId)}/preview`),
   teamCheck: (projectId: ID) => api<{ sent: boolean; reason?: string }>('POST', `/api/projects/${enc(projectId)}/team-check`),
   /** Feedback #11: the commander ticks or unticks an acceptance criterion. */
   questAcceptance: (questId: ID, index: number, done: boolean) => api<Quest>('POST', `/api/quests/${enc(questId)}/acceptance/${index}`, { done }),
@@ -44,7 +56,7 @@ export const endpoints = {
   // projects
   createProject: (input: ProjectInput) => api<Project>('POST', '/api/projects', input),
   patchProject: (id: ID, patch: { goal?: string; dailyCapUsd?: number }) => api<Project>('PATCH', `/api/projects/${enc(id)}`, patch),
-  diff: (projectId: ID, branch: string) => apiText(`/api/projects/${enc(projectId)}/diff?branch=${enc(branch)}`),
+  diff: (projectId: ID, branch: string, base?: string) => apiText(`/api/projects/${enc(projectId)}/diff?branch=${enc(branch)}${base ? `&base=${enc(base)}` : ''}`),
 
   // dev Supabase (docs/phase4.md "HTTP"). start/stop/reset answer 202 and finish in the background.
   supabaseDetails: (projectId: ID) => api<SupabaseDetails>('GET', `/api/projects/${enc(projectId)}/supabase`),
