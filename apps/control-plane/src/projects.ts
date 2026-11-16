@@ -181,7 +181,7 @@ export class MergeService {
     delete next.approvedBy
     delete next.approvedAt
     this.store.saveMergeRequest(next)
-    this.store.resolveAlert(this.alertId(mr.id))
+    this.store.resolveAlert(this.alertId(mr.id), 'acted')
     if (mr.requestedBy !== 'you' && this.store.agents.has(mr.requestedBy) && this.agents) {
       this.agents.message(mr.requestedBy,
         `The commander requested changes on your merge request for ${mr.branch} → main:\n${note}\n\n` +
@@ -217,7 +217,7 @@ export class MergeService {
     if (result.ok) {
       const merged: MergeRequest = { ...mr, status: 'merged' }
       this.store.saveMergeRequest(merged)
-      this.store.resolveAlert(this.alertId(mr.id))
+      this.store.resolveAlert(this.alertId(mr.id), 'acted')
       this.quests?.onMerged(merged)
       this.store.broadcastSnapshot()
       return { mergeRequest: merged, result }

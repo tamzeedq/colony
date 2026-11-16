@@ -258,6 +258,8 @@ export function canMergeToMain(mr: MergeRequest): boolean {
 export type AlertKind = 'crash' | 'host_down' | 'approval' | 'question' | 'loop' | 'budget' | 'limit_pace'
 export type AlertSeverity = 'critical' | 'needs_you' | 'heads_up'
 
+export type AlertResolution = 'dismissed' | 'acted' | 'auto'
+
 export interface Alert {
   id: ID
   at: ISODate
@@ -269,6 +271,8 @@ export interface Alert {
   detail?: string
   actions: { id: string; label: string; primary?: boolean; actsAsYou?: boolean }[]
   resolvedAt?: ISODate
+  /** How it was resolved: you dismissed it, you acted on it, or Colony resolved it itself. */
+  resolution?: AlertResolution
 }
 
 // ── Usage, resources, guards ────────────────────────────────────────────────────

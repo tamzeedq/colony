@@ -1,5 +1,5 @@
 // Typed calls for every control-plane route the UI uses (docs/phase2.md "UI action → API").
-import type { ActivityEvent, Agent, Alert, Analytics, AnalyticsDays, GithubConfig, GithubTokenStatus, Guards, ID, KeepAwakeMode, KeepAwakeState, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
+import type { ActivityEvent, Agent, Alert, AlertResolution, Analytics, AnalyticsDays, GithubConfig, GithubTokenStatus, Guards, ID, KeepAwakeMode, KeepAwakeState, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
 import { api, apiText, enc } from './client'
 
 export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string; iconSeed?: string }
@@ -77,7 +77,8 @@ export const endpoints = {
   analytics: (days: AnalyticsDays) => api<Analytics>('GET', `/api/analytics?days=${days}`),
 
   // alerts
-  resolveAlert: (id: ID) => api<Alert>('POST', `/api/alerts/${enc(id)}/resolve`),
+  resolveAlert: (id: ID, resolution?: AlertResolution) => api<Alert>('POST', `/api/alerts/${enc(id)}/resolve`, resolution ? { resolution } : undefined),
+  reopenAlert: (id: ID) => api<Alert>('POST', `/api/alerts/${enc(id)}/reopen`),
 
   // merge requests
   approveMerge: (id: ID) => api<{ mergeRequest?: MergeRequest } & Partial<MergeRequest>>('POST', `/api/merge-requests/${enc(id)}/approve`),

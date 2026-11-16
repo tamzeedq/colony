@@ -6,7 +6,7 @@ import { cpus, freemem, totalmem } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import {
   BUILTIN_MODELS, BUILTIN_MODEL_IDS, PROTOCOL_VERSION,
-  type ActivityEvent, type Agent, type Alert, type Guards, type MergeRequest, type PlanUsage,
+  type ActivityEvent, type Agent, type Alert, type AlertResolution, type Guards, type MergeRequest, type PlanUsage,
   type KeepAwakeState, type Project, type ProviderConfig, type Quest, type Resources, type Snapshot, type UiStreamMessage,
 } from '@colony/shared'
 import type { Config } from './config'
@@ -47,6 +47,10 @@ export const DEFAULT_GUARDS: Guards = {
 }
 
 export const nowIso = () => new Date().toISOString()
+export const ALERT_RETENTION_DAYS = 30
+/** Informational alerts carry no buttons of their own; every alert can at least be dismissed. */
+export const withDismiss = (actions: Alert['actions'] | undefined): Alert['actions'] =>
+  actions && actions.length ? actions : [{ id: 'dismiss', label: 'Dismiss' }]
 export const localDay = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 export const newId = (prefix: string) => `${prefix}-${randomBytes(5).toString('hex')}`
@@ -98,7 +102,8 @@ export class Store {
         tokenHash: String(r.token_hash), sessionId: (r.session_id as string | null) ?? undefined, createdAt: String(r.created_at),
       })
     }
-    for (const r of db.all('SELECT json FROM alerts ORDER BY at')) { const a = JSON.parse(String(r.json)) as Alert; this.alerts.set(a.id, a) }
+    for (const r of db.all('SELECT json FROM alerts ORDER BY at')) { const a = JSON.parse(String(r.json)) as Alert; this.alerts.set(a.id, { ...a, actions: withDismiss(a.actions) }) }
+    this.pruneResolvedAlerts()
     for (const r of db.all('SELECT json FROM merge_requests')) { const m = JSON.parse(String(r.json)) as MergeRequest; this.mergeRequests.set(m.id, m) }
     for (const r of db.all('SELECT json FROM quests')) { const q = JSON.parse(String(r.json)) as Quest; this.quests.set(q.id, q) }
     this.usage = db.kvGet<PlanUsage>('plan_usage') ?? defaultPlanUsage()
@@ -242,16 +247,34 @@ export class Store {
     if (a.projectId) this.emitProjectChanged()
   }
   raiseAlert(a: Omit<Alert, 'id' | 'at' | 'actions'> & Partial<Pick<Alert, 'id' | 'actions'>>): Alert {
-    const alert: Alert = { id: a.id ?? newId('al'), at: nowIso(), actions: a.actions ?? [], ...a }
+    const alert: Alert = { id: a.id ?? newId('al'), at: nowIso(), ...a, actions: withDismiss(a.actions) }
     this.upsertAlert(alert)
     return alert
   }
-  resolveAlert(id: string): Alert | undefined {
+  /** Colony's own callers resolve with 'auto'; the HTTP route passes what the commander did. */
+  resolveAlert(id: string, resolution: AlertResolution = 'auto'): Alert | undefined {
     const a = this.alerts.get(id)
     if (!a || a.resolvedAt) return a
-    const next = { ...a, resolvedAt: nowIso() }
+    const next: Alert = { ...a, resolvedAt: nowIso(), resolution }
     this.upsertAlert(next)
     return next
+  }
+  /** Undo a resolve/dismiss. Rebroadcasts the alert as open again. */
+  reopenAlert(id: string): Alert | undefined {
+    const a = this.alerts.get(id)
+    if (!a || !a.resolvedAt) return a
+    const { resolvedAt: _r, resolution: _x, ...rest } = a
+    const next: Alert = { ...rest, actions: withDismiss(rest.actions) }
+    this.upsertAlert(next)
+    return next
+  }
+  /** Resolved alerts are kept for ALERT_RETENTION_DAYS, then removed (boot and day roll). */
+  pruneResolvedAlerts(now = Date.now()): number {
+    const cutoff = new Date(now - ALERT_RETENTION_DAYS * 86_400_000).toISOString()
+    let n = 0
+    for (const [id, a] of this.alerts) if (a.resolvedAt && a.resolvedAt < cutoff) { this.alerts.delete(id); n++ }
+    if (n) this.db.run('DELETE FROM alerts WHERE resolved_at IS NOT NULL AND resolved_at < ?', cutoff)
+    return n
   }
   /** Projects carry unreadAlerts; there is no project delta message, so resend the snapshot lazily. */
   private projectChangedTimer: NodeJS.Timeout | undefined
@@ -333,6 +356,7 @@ export class Store {
     const d = localDay()
     if (d === this.day) return false
     this.day = d
+    this.pruneResolvedAlerts()
     this.recomputeSpend()
     this.broadcastSnapshot()
     return true

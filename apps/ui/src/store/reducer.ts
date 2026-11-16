@@ -1,6 +1,6 @@
 // State + reducer shared by both data modes. In live mode the reducer applies optimistic updates
 // and stream messages (hydrate / patchAgent / upsertAlert / resources); see live.ts for the API side.
-import type { Agent, AgentStatus, Alert, Guards, ID, MergeRequest, ModelInfo, Project, ProviderView, Quest, Resources, Snapshot } from '@/types/colony'
+import type { Agent, AgentStatus, Alert, AlertResolution, Guards, ID, MergeRequest, ModelInfo, Project, ProviderView, Quest, Resources, Snapshot } from '@/types/colony'
 import { BUILTIN_MODELS } from '@/types/colony'
 
 export interface Toast { id: ID; alertId?: ID; title: string; tone: 'critical' | 'needs_you' | 'heads_up' | 'done' | 'error'; at: number }
@@ -26,7 +26,7 @@ export type Action =
   | { type: 'setModel'; id: ID; model: Agent['model'] }
   | { type: 'configAgent'; id: ID; rolePrompt?: string; budgetCapUsd?: number }
   | { type: 'message'; id: ID; text: string }
-  | { type: 'resolveAlert'; id: ID } | { type: 'addAlert'; alert: Alert }
+  | { type: 'resolveAlert'; id: ID; resolution?: AlertResolution } | { type: 'reopenAlert'; id: ID } | { type: 'addAlert'; alert: Alert }
   | { type: 'spawn'; agent: Agent } | { type: 'addProject'; project: Project; agents: Agent[] }
   | { type: 'setGoal'; projectId: ID; goal: string }
   | { type: 'questStatus'; id: ID; status: Quest['status'] } | { type: 'addQuest'; quest: Quest }
@@ -96,8 +96,9 @@ export function reducer(s: State, a: Action): State {
     case 'setModel': return mapAgents(s, [a.id], (x) => ({ ...x, model: a.model }))
     case 'configAgent': return mapAgents(s, [a.id], (x) => ({ ...x, rolePrompt: a.rolePrompt ?? x.rolePrompt, budgetCapUsd: a.budgetCapUsd ?? x.budgetCapUsd }))
     case 'message': return s
-    case 'resolveAlert': return { ...s, alerts: s.alerts.map((x) => (x.id === a.id ? { ...x, resolvedAt: x.resolvedAt ?? new Date().toISOString() } : x)),
+    case 'resolveAlert': return { ...s, alerts: s.alerts.map((x) => (x.id === a.id && !x.resolvedAt ? { ...x, resolvedAt: new Date().toISOString(), resolution: a.resolution ?? 'acted' } : x)),
       ui: { ...s.ui, toasts: s.ui.toasts.filter((t) => t.alertId !== a.id) } }
+    case 'reopenAlert': return { ...s, alerts: s.alerts.map((x) => { if (x.id !== a.id) return x; const { resolvedAt: _r, resolution: _x, ...rest } = x; return rest }) }
     case 'addAlert': return { ...s, alerts: [a.alert, ...s.alerts] }
     case 'spawn': return { ...s, agents: [...s.agents, a.agent],
       projects: s.projects.map((p) => (p.id === a.agent.projectId ? { ...p, agentIds: [...p.agentIds, a.agent.id] } : p)) }
@@ -112,7 +113,7 @@ export function reducer(s: State, a: Action): State {
       return {
         ...s, quests: unblocked,
         agents: s.agents.map((x) => (x.id === q.assigneeId ? { ...x, status: 'idle', currentAction: undefined, xp: Math.min(99, x.xp + 30), questsDone: x.questsDone + 1 } : x)),
-        alerts: s.alerts.map((x) => (x.kind === 'approval' && x.agentId === q.assigneeId ? { ...x, resolvedAt: new Date().toISOString() } : x)),
+        alerts: s.alerts.map((x) => (x.kind === 'approval' && x.agentId === q.assigneeId ? { ...x, resolvedAt: new Date().toISOString(), resolution: 'acted' } : x)),
       }
     }
     case 'approveMerge': return { ...s, mergeRequests: s.mergeRequests.map((m) => (m.id === a.id && m.status !== 'merged' ? { ...m, status: 'approved', approvedBy: 'you', approvedAt: new Date().toISOString() } : m)) }
