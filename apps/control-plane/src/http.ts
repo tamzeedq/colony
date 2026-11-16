@@ -399,7 +399,14 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
 
   // alerts (addition: lets the UI dismiss/resolve an alert)
   app.post('/api/alerts/:id/resolve', async (req) => {
-    const a = store.resolveAlert(param(req, 'id'))
+    const r = (req.body as { resolution?: unknown } | undefined)?.resolution
+    if (r !== undefined && r !== 'dismissed' && r !== 'acted' && r !== 'auto') throw new HttpError(400, 'bad_request', 'resolution must be dismissed, acted or auto')
+    const a = store.resolveAlert(param(req, 'id'), r ?? 'acted')
+    if (!a) throw new HttpError(404, 'not_found', 'alert not found')
+    return a
+  })
+  app.post('/api/alerts/:id/reopen', async (req) => {
+    const a = store.reopenAlert(param(req, 'id'))
     if (!a) throw new HttpError(404, 'not_found', 'alert not found')
     return a
   })

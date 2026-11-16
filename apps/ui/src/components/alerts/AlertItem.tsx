@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Alert, AlertKind } from '@/types/colony'
 import { ALERT_SEVERITY } from '@/design/status'
 import { useStore, mergeRequestForAlert } from '@/store/store'
 import { ago, cx } from '@/lib/util'
+import { leftUndone, needsConfirm, useDismiss } from './dismiss'
 
 export const KIND: Record<AlertKind, { g: string; label: string; color: string; bar: string }> = {
   crash: { g: '✕', label: 'Critical · crash', color: 'text-st-error', bar: 'bg-st-error' },
@@ -22,6 +23,7 @@ export function useAlertAction() {
   return (alert: Alert, actionId: string) => {
     const agent = state.agents.find((a) => a.id === alert.agentId)
     const done = () => dispatch({ type: 'resolveAlert', id: alert.id })
+    if (actionId === 'dismiss') return dispatch({ type: 'resolveAlert', id: alert.id, resolution: 'dismissed' })
     if (mode === 'live') return liveAlertAction(alert, actionId)
     if (actionId.startsWith('reply:')) { if (agent) dispatch({ type: 'agentStatus', id: agent.id, status: 'editing', action: `Using: ${actionId.slice(6)}` }); return done() }
     switch (actionId) {
@@ -82,10 +84,14 @@ export function useAlertAction() {
   }
 }
 
-export function AlertItem({ alert, compact = false }: { alert: Alert; compact?: boolean }) {
+export function AlertItem({ alert, compact = false, focused = false }: { alert: Alert; compact?: boolean; focused?: boolean }) {
   const { state, dispatch } = useStore()
   const act = useAlertAction()
+  const { dismiss } = useDismiss()
   const [reply, setReply] = useState('')
+  const [confirming, setConfirming] = useState(false)
+  const ref = useRef<HTMLElement>(null)
+  const replyRef = useRef<HTMLInputElement>(null)
   // A crash-kind alert raised as heads-up (e.g. "resumed after restart") is information, not an emergency.
   const k = alert.kind === 'crash' && alert.severity === 'heads_up'
     ? { g: '↻', label: 'Heads-up · recovered', color: 'text-st-blocked', bar: 'bg-st-blocked' }
@@ -94,10 +100,34 @@ export function AlertItem({ alert, compact = false }: { alert: Alert; compact?: 
   const agent = state.agents.find((a) => a.id === alert.agentId)
   const project = state.projects.find((p) => p.id === alert.projectId)
   const who = [agent?.callsign, project?.name].filter(Boolean).join(' · ')
+  const requestDismiss = () => {
+    if (needsConfirm(alert) && !confirming) { setConfirming(true); return }
+    setConfirming(false)
+    dismiss([alert])
+  }
+  useEffect(() => {
+    if (!confirming) return
+    const t = setTimeout(() => setConfirming(false), 4000)
+    return () => clearTimeout(t)
+  }, [confirming])
+  // Inbox keyboard shortcuts act on the focused card through these events.
+  const handlers = useRef({ requestDismiss, act })
+  handlers.current = { requestDismiss, act }
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const onDismiss = () => handlers.current.requestDismiss()
+    const onApprove = () => { if (alert.actions.some((a) => a.id === 'approve')) handlers.current.act(alert, 'approve') }
+    const onReply = () => { if (replyRef.current) replyRef.current.focus(); else if (agent) dispatch({ type: 'inspect', id: agent.id }) }
+    const onOpen = () => { if (agent) dispatch({ type: 'inspect', id: agent.id }) }
+    el.addEventListener('alert-dismiss', onDismiss); el.addEventListener('alert-approve', onApprove)
+    el.addEventListener('alert-reply', onReply); el.addEventListener('alert-open', onOpen)
+    return () => { el.removeEventListener('alert-dismiss', onDismiss); el.removeEventListener('alert-approve', onApprove); el.removeEventListener('alert-reply', onReply); el.removeEventListener('alert-open', onOpen) }
+  })
   const row = alert.kind === 'loop' || alert.kind === 'budget' || alert.kind === 'limit_pace'
 
   return (
-    <article id={alert.id} className={cx('flex gap-3.5 rounded-xl border bg-surface', compact ? 'p-3' : 'p-4', sev.border)}>
+    <article ref={ref} id={alert.id} data-alert-card className={cx('flex gap-3.5 rounded-xl border bg-surface', compact ? 'p-3' : 'p-4', sev.border, focused && 'ring-2 ring-you/70')}>
       <div className={cx('w-1 shrink-0 rounded-full', k.bar)} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2.5">
@@ -112,7 +142,7 @@ export function AlertItem({ alert, compact = false }: { alert: Alert; compact?: 
           ? <pre className="mb-3 whitespace-pre-wrap rounded-md border border-line-soft bg-[#07090C] px-3 py-2.5 font-mono text-xs leading-relaxed text-ink-muted">{alert.detail}</pre>
           : <div className="mb-3 text-xs text-ink-muted">{alert.detail}</div>)}
         <div className="flex flex-wrap gap-2">
-          {alert.actions.map((a) => (
+          {alert.actions.filter((a) => a.id !== 'dismiss').map((a) => (
             <button key={a.id} type="button" onClick={() => act(alert, a.id)}
               className={cx('rounded-md px-3 py-1.5 text-[13px]',
                 a.actsAsYou && a.primary ? 'bg-you font-bold text-you-ink' : a.primary ? 'bg-ink font-semibold text-ground' : alert.kind === 'question' ? 'rounded-full border border-line bg-raised' : 'border border-line text-ink')}>
@@ -120,10 +150,15 @@ export function AlertItem({ alert, compact = false }: { alert: Alert; compact?: 
             </button>
           ))}
           {agent && !compact && <button type="button" onClick={() => dispatch({ type: 'inspect', id: agent.id })} className="px-1.5 text-[13px] text-you">Inspect →</button>}
+          <button type="button" onClick={requestDismiss} aria-label="Dismiss" title="Dismiss (E)"
+            className={cx('ml-auto rounded-md px-2.5 py-1.5 text-[13px]', confirming ? 'border border-st-error/60 font-semibold text-st-error' : 'text-ink-dim hover:text-ink')}>
+            {confirming ? 'Dismiss? Click again' : 'Dismiss'}
+          </button>
         </div>
+        {confirming && <div className="mt-1.5 text-right text-xs text-ink-muted">{leftUndone(alert, agent)}</div>}
         {alert.kind === 'question' && !compact && (
           <form className="mt-2.5 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (reply) act(alert, `reply:${reply}`) }}>
-            <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder={`Reply to ${agent?.callsign ?? 'agent'}…  (R)`} aria-label="Reply"
+            <input ref={replyRef} value={reply} onChange={(e) => setReply(e.target.value)} placeholder={`Reply to ${agent?.callsign ?? 'agent'}…  (R)`} aria-label="Reply"
               className="flex-1 rounded-md border border-line bg-ground px-3 py-2 text-[13px]" />
             <button type="submit" className="rounded-md bg-ink px-3.5 text-[13px] font-semibold text-ground">Send</button>
           </form>

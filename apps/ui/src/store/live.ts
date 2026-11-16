@@ -29,7 +29,8 @@ export function liveEffect(a: Action, prev: State): LiveEffect | null {
     case 'takeControl': return { label: 'Take control', run: () => endpoints.takeControl(a.id) }
     case 'handBack': return { label: 'Hand back', run: () => endpoints.handBack(a.id, a.note) }
     case 'message': return { label: 'Message', run: () => endpoints.message(a.id, a.text) }
-    case 'resolveAlert': return { label: 'Resolve alert', run: () => endpoints.resolveAlert(a.id) }
+    case 'resolveAlert': return { label: 'Resolve alert', run: () => endpoints.resolveAlert(a.id, a.resolution) }
+    case 'reopenAlert': return { label: 'Reopen alert', run: () => endpoints.reopenAlert(a.id) }
     case 'setGoal': return { label: 'Send goal', run: () => endpoints.patchProject(a.projectId, { goal: a.goal }) }
     case 'cap': return { label: 'Daily cap', run: () => endpoints.patchProject(a.projectId, { dailyCapUsd: a.cap }) }
     case 'guards': return { label: 'Guards', run: () => queueGuards(a.patch) }

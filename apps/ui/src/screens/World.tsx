@@ -5,6 +5,7 @@ import { useStore, needsYou, projectAgents } from '@/store/store'
 import { PlanLimitsPanel } from '@/components/hud/PlanLimitsPanel'
 import { ActivityFeed } from '@/components/feed/ActivityFeed'
 import { AlertItem } from '@/components/alerts/AlertItem'
+import { UndoSnackbar } from '@/components/alerts/dismiss'
 import { KeyHint } from '@/components/ui/primitives'
 import { Segments } from '@/components/ui/controls'
 import { EmptyWorld, DockerDown } from '@/components/states/EmptyStates'
@@ -109,6 +110,7 @@ export function World() {
         </section>
         <ActivityFeed title="Colony feed" limit={8} />
       </aside>
+      <UndoSnackbar />
     </div>
   )
 }
