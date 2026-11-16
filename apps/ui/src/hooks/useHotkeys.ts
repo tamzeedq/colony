@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/store/store'
+import { togglePauseAll } from '@/store/pauseControls'
 import { isTypingTarget } from '@/lib/util'
 
 export function useHotkeys() {
@@ -40,7 +41,7 @@ export function useHotkeys() {
       if (e.key === '?') { dispatch({ type: 'overlay', overlay: s.ui.overlay === 'shortcuts' ? null : 'shortcuts' }); return }
       if (e.key === ' ') {
         e.preventDefault()
-        if (e.shiftKey) { dispatch({ type: 'pauseAll' }); return }
+        if (e.shiftKey) { togglePauseAll(); return }
         const ids = s.ui.selected.length ? s.ui.selected : inspected ? [inspected.id] : []
         if (!ids.length) return
         const allPaused = ids.every((id) => s.agents.find((a) => a.id === id)?.status === 'paused')

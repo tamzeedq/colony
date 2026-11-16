@@ -6,8 +6,8 @@ import { STATUS, MOTION_CLASS, modelInfo, ROLES, meterTone } from '@/design/stat
 import { cx } from '@/lib/util'
 
 /** Glyph + label, always. Color only reinforces. */
-export function StatusBadge({ status, compact = false }: { status: AgentStatus; compact?: boolean }) {
-  const s = STATUS[status]
+export function StatusBadge({ status, compact = false, pausing = false }: { status: AgentStatus; compact?: boolean; pausing?: boolean }) {
+  const s = pausing && status !== 'paused' ? { ...STATUS.paused, glyph: '‖', label: 'Pausing…', badge: `${STATUS.paused.badge} border-dashed` } : STATUS[status]
   return (
     <span className={cx('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border font-semibold',
       compact ? 'px-2 text-[11px]' : 'px-2.5 py-0.5 text-xs', s.badge)}>

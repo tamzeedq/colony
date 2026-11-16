@@ -183,6 +183,10 @@ export interface Agent {
   questsDone: number
   rolePrompt: string
   allowedTools: string[]
+  /** Asked to pause (by you or a guard) but the runner has not reported 'paused' yet. */
+  pauseRequested?: boolean
+  /** Why it is paused / being paused. Set while the pause is wanted. */
+  pausedBy?: 'you' | 'budget' | 'plan_usage' | 'project_budget'
 }
 
 // ── Quests ──────────────────────────────────────────────────────────────────────

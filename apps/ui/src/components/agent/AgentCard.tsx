@@ -38,7 +38,7 @@ export function AgentCard({ agent, selected, onToggle }: { agent: Agent; selecte
           <div className="mt-0.5 truncate text-xs text-ink-muted" title={sub}>{sub}</div>
         </div>
       </div>
-      <div className="flex h-[22px] items-center gap-1.5 overflow-hidden"><StatusBadge status={agent.status} /><ModelBadge model={agent.model} /></div>
+      <div className="flex h-[22px] items-center gap-1.5 overflow-hidden"><StatusBadge status={agent.status} pausing={!!agent.pauseRequested} /><ModelBadge model={agent.model} /></div>
       <div className="line-clamp-2 h-[2.75em] break-words text-[13px] leading-[1.375]" title={task}>{task}</div>
       <div className="h-4 truncate font-mono text-[11px] text-ink-dim" title={agent.branch}>{agent.branch ? `⎇ ${agent.branch}` : ''}</div>
       <div className="grid grid-cols-3 gap-2.5 border-t border-line-soft pt-2.5">

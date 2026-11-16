@@ -26,7 +26,9 @@ export const endpoints = {
   // agents
   pause: (id: ID) => api<Agent>('POST', `${a(id)}/pause`),
   resume: (id: ID) => api<Agent>('POST', `${a(id)}/resume`),
-  pauseAll: () => api('POST', '/api/agents/pause-all'),
+  pauseAll: (workersOnly?: boolean) => api<{ paused: ID[]; skipped: ID[] }>('POST', '/api/agents/pause-all', workersOnly ? { workersOnly: true } : undefined),
+  /** Graceful stop of the control plane (answers 202, then exits). Containers are left as they are. */
+  shutdown: () => api('POST', '/api/admin/shutdown'),
   kill: (id: ID) => api('DELETE', a(id)),
   restart: (id: ID) => api<Agent>('POST', `${a(id)}/restart`),
   patchAgent: (id: ID, patch: { model?: ModelId; rolePrompt?: string; budgetCapUsd?: number }) => api<Agent>('PATCH', a(id), patch),

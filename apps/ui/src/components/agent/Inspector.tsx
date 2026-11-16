@@ -94,7 +94,7 @@ function Header({ agent, onClose }: { agent: Agent; onClose: () => void }) {
       <div className="min-w-60 flex-1">
         <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="m-0 font-display text-[28px] font-semibold leading-none">{agent.callsign}</h1>
-          <StatusBadge status={agent.status} />
+          <StatusBadge status={agent.status} pausing={!!agent.pauseRequested} />
         </div>
         <div className="mt-1.5 text-[13px] text-ink-muted">{ROLES[agent.role].name} · {project?.name}{agent.branch ? ` · ⎇ ${agent.branch}` : ''} · container {agent.container.name}</div>
       </div>
@@ -146,9 +146,10 @@ function Controls({ agent }: { agent: Agent }) {
   const { dispatch } = useStore()
   const [confirmKill, setConfirmKill] = useState(false)
   const paused = agent.status === 'paused'
+  const pausing = !!agent.pauseRequested && !paused
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b border-line-soft px-5 py-2.5">
-      <Button kbd="Space" onClick={() => dispatch({ type: paused ? 'resume' : 'pause', ids: [agent.id] })}>{paused ? '▸ Resume' : '‖ Pause'}</Button>
+      <Button kbd="Space" onClick={() => dispatch({ type: paused || pausing ? 'resume' : 'pause', ids: [agent.id] })}>{paused ? '▸ Resume' : pausing ? 'Pausing… · Cancel' : '‖ Pause'}</Button>
       <Button onClick={() => dispatch({ type: 'restart', id: agent.id })}>↻ Restart</Button>
       <PreviewControl agent={agent} />
       {!confirmKill

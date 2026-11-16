@@ -21,7 +21,7 @@ export function liveEffect(a: Action, prev: State): LiveEffect | null {
   switch (a.type) {
     case 'pause': return { label: 'Pause', run: () => each(a.ids, endpoints.pause) }
     case 'resume': return { label: 'Resume', run: () => each(a.ids, endpoints.resume) }
-    case 'pauseAll': return { label: 'Pause all', run: endpoints.pauseAll }
+    case 'pauseAll': return { label: 'Pause all', run: () => endpoints.pauseAll(a.workersOnly) }
     case 'kill': return { label: 'Kill', run: () => each(a.ids, endpoints.kill) }
     case 'restart': return { label: 'Restart', run: () => endpoints.restart(a.id) }
     case 'setModel': return { label: 'Change model', run: () => endpoints.patchAgent(a.id, { model: a.model }) }

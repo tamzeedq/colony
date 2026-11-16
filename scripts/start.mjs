@@ -112,6 +112,12 @@ function start(name, tint, cwd, args, env = {}) {
   }
   child.on('exit', (code, signal) => {
     if (stopping) return
+    if (name === 'cp' && code === 0) {
+      // Clean exit: "Shut down Colony" in the Ops Deck, or `npm run stop`.
+      say(paint('32', 'The control plane was shut down on request; stopping the Ops Deck too. Run `npm start` to start Colony again.'))
+      shutdown(0, true)
+      return
+    }
     say(paint('31', `${name} exited (${signal ?? `code ${code}`}); stopping Colony.`))
     shutdown(code || 1)
   })
@@ -119,10 +125,12 @@ function start(name, tint, cwd, args, env = {}) {
   return child
 }
 
-function shutdown(code = 0) {
+function shutdown(code = 0, requested = false) {
   if (stopping) return
   stopping = true
-  say('Stopping. Agent containers and dev Supabase stacks keep running; the next `npm start` reconnects to them.')
+  say(requested
+    ? 'Stopping. Agents were paused and dev Supabase stacks stopped first; `npm run stop` also stops agent containers. The next `npm start` reconnects.'
+    : 'Stopping. Agent containers and dev Supabase stacks keep running; the next `npm start` reconnects to them.')
   for (const c of children) if (c.exitCode === null) c.kill()
   setTimeout(() => process.exit(code), 3000).unref()
   Promise.all(children.map((c) => new Promise((r) => (c.exitCode !== null ? r() : c.once('exit', r))))).then(() => process.exit(code))

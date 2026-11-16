@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { PROTOCOL_VERSION, ROLE_IDS, type Guards, type RoleId } from '@colony/shared'
 import type { AgentManager } from './agents'
 import type { Config } from './config'
-import { badRequest, HttpError } from './errors'
+import { badRequest, conflict, HttpError } from './errors'
 import type { GuardService } from './guards'
 import type { MergeService, ProjectService } from './projects'
 import type { ProviderService, ProviderUpdate } from './providers'
@@ -31,6 +31,10 @@ export interface HttpDeps {
   checkpoints: CheckpointService
   teamCheck: TeamCheckService
   access: AccessService
+  /** Called after POST /api/admin/shutdown has answered and the app has closed (default: exit). */
+  onShutdown?: () => void
+  /** Closes the app (HTTP server, sockets, db). */
+  close?: () => Promise<void>
 }
 
 // ── validation helpers ────────────────────────────────────────────────────────
@@ -144,6 +148,7 @@ export function checkAdmin(config: Config, headers: Record<string, string | stri
 
 export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
   const { store, agents, projects, merges, config, guards, providers, quests, supabase, checkpoints, teamCheck, access } = d
+  let shuttingDown = false
 
   // Accept empty JSON bodies (e.g. POST /pause sent with a JSON content type).
   app.removeContentTypeParser('application/json')
@@ -306,13 +311,27 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
     const text = str(body(req), 'text', { required: true, max: 50_000 })
     return agents.message(param(req, 'id'), text)
   })
-  app.post('/api/agents/pause-all', async () => agents.pauseAll())
+  app.post('/api/agents/pause-all', async (req) => {
+    const b = body(req)
+    for (const k of Object.keys(b)) if (k !== 'workersOnly') throw badRequest(`unknown field '${k}'`)
+    return agents.pauseAll({ workersOnly: bool(b, 'workersOnly') === true })
+  })
+  // Graceful stop of the control plane (`npm run stop`, the HUD's "Shut down Colony…"). Agent and
+  // git containers are left alone; the caller pauses agents and stops Supabase first.
+  app.post('/api/admin/shutdown', async (_req, reply) => {
+    if (!d.close) throw conflict('shutdown is not available')
+    if (!shuttingDown) {
+      shuttingDown = true
+      setTimeout(() => { void Promise.race([d.close!(), new Promise((r) => setTimeout(r, 5000))]).catch(() => {}).finally(() => (d.onShutdown ?? (() => process.exit(0)))()) }, 150)
+    }
+    return reply.status(202).send({ ok: true, shuttingDown: true })
+  })
   app.post('/api/agents/:id/take-control', async (req) => agents.takeControl(param(req, 'id')))
   app.post('/api/agents/:id/hand-back', async (req) => {
     const note = str(body(req), 'note', { max: 10_000 })
     return agents.handBack(param(req, 'id'), note || undefined)
   })
-  app.post('/api/agents/:id/pause', async (req) => agents.pause(param(req, 'id'), 'you'))
+  app.post('/api/agents/:id/pause', async (req) => agents.pause(param(req, 'id'), 'you', { graceful: true }))
   app.post('/api/agents/:id/resume', async (req) => agents.resume(param(req, 'id')))
   app.post('/api/agents/:id/interrupt', async (req) => agents.interrupt(param(req, 'id')))
   app.post('/api/agents/:id/restart', async (req) => agents.restart(param(req, 'id')))
