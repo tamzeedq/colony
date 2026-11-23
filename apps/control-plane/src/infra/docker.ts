@@ -307,6 +307,11 @@ export function createDockerDriver(opts: DockerDriverOptions = {}): DockerDriver
       if (o.remove) await ignoreMissing(c.remove({ force: true }))
     },
 
+    async imageId(image) {
+      const info = await ignoreMissing(docker.getImage(image).inspect())
+      return info?.Id
+    },
+
     async removeAgentVolume(agentId) {
       assertAgentId(agentId)
       await ignoreMissing(docker.getVolume(names.agentVolume(agentId)).remove({ force: true }))

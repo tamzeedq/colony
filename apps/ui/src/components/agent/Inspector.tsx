@@ -16,6 +16,7 @@ import { FeedRow } from '@/components/feed/ActivityFeed'
 import { Checkpoints } from '@/components/agent/Checkpoints'
 import { PreviewControl } from '@/components/agent/PreviewControl'
 import { containerCpu, cx, usd } from '@/lib/util'
+import { OutdatedBanner } from '@/components/agent/Outdated'
 
 type Tab = 'feed' | 'term' | 'changes' | 'task' | 'config'
 
@@ -48,6 +49,7 @@ export function Inspector({ docked }: { docked: boolean }) {
         <ControlStrip agent={agent} />
         <Header agent={agent} onClose={close} />
         <Stats agent={agent} />
+        <OutdatedBanner agent={agent} />
         <Controls agent={agent} />
         <Tabs className="px-5" value={tab} onChange={setTab} tabs={[
           { id: 'feed', label: 'Live feed', kbd: 'F' }, { id: 'term', label: 'Terminal' }, { id: 'changes', label: 'Changes' },

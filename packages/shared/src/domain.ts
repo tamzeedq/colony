@@ -157,6 +157,8 @@ export interface Project {
 }
 
 export interface Agent {
+  /** Started on an older agent image or older role instructions than Colony has now; restart to update. */
+  outdated?: ('image' | 'instructions')[]
   id: ID
   projectId: ID
   callsign: string            // "Vex-07"

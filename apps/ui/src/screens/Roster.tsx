@@ -6,6 +6,7 @@ import { AgentCard } from '@/components/agent/AgentCard'
 import { Chip } from '@/components/ui/controls'
 import { Button, KeyHint } from '@/components/ui/primitives'
 import { cx } from '@/lib/util'
+import { RestartOutdatedButton } from '@/components/agent/Outdated'
 
 const ORDER: AgentStatus[] = ['error', 'waiting', 'blocked', 'running', 'editing', 'thinking', 'booting', 'idle', 'paused', 'done']
 const STATUS_FILTERS: { id: string; label: string; match: (s: AgentStatus) => boolean }[] = [
@@ -42,6 +43,7 @@ export function Roster() {
           <span aria-hidden="true" className="text-ink-dim">⌕</span>
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search callsign, task, branch" aria-label="Search agents" className="min-w-0 flex-1 bg-transparent py-2.5 text-[13px] outline-none" />
         </label>
+        <RestartOutdatedButton />
         <Link to="/spawn" className="inline-flex items-center gap-2.5 rounded-lg bg-you px-4.5 py-2.5 text-sm font-bold text-you-ink no-underline">+ Spawn agent <KeyHint>S</KeyHint></Link>
       </div>
 

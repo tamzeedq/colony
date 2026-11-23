@@ -31,6 +31,10 @@ export interface AgentInternal {
   pending: string[]
   startedAt: string
   lastSeenAt?: string
+  /** What the running container was started with (to flag outdated agents). */
+  launch?: { imageId?: string }
+  /** The commander edited the role prompt (or gave one at spawn): never replace it on update. */
+  promptCustom?: boolean
 }
 
 export interface AgentRecord {

@@ -123,7 +123,7 @@ export async function createApp(opts: AppOptions): Promise<ColonyApp> {
   const terminals = new TerminalHub(config, store, infra, log)
   const stats = new StatsPoller(store, infra, config.statsIntervalMs, log, config.agentCpus)
   const teamCheck = new TeamCheckService(store, agents, infra)
-  stats.onTick = () => { guards.checkSessionRollover(); void teamCheck.tick() }
+  stats.onTick = () => { guards.checkSessionRollover(); void teamCheck.tick(); void agents.refreshOutdated() }
   stats.onDockerBack = async () => {
     await reconcile(store, infra, agents, log, { autoResume: config.autoResume })
     await supabase.reconcile()

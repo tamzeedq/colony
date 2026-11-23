@@ -57,6 +57,9 @@ export interface InfraDriver {
   /** Stop the agent container; with remove, delete the container (volume kept). */
   stopAgent(agentId: string, opts?: { remove?: boolean }): Promise<void>
 
+  /** Id of a local image (sha256:…), or undefined when it doesn't exist. Optional. */
+  imageId?(image: string): Promise<string | undefined>
+
   /** Delete the agent's workspace volume. */
   removeAgentVolume(agentId: string): Promise<void>
 

@@ -49,6 +49,8 @@ export const endpoints = {
   preview: (agentId: ID) => api<PreviewInfo>('GET', `${a(agentId)}/preview`),
   startPreview: (agentId: ID, port: number) => api<PreviewAccess>('POST', `${a(agentId)}/preview`, { port }),
   stopPreview: (agentId: ID) => api('DELETE', `${a(agentId)}/preview`),
+  updateAgent: (id: ID) => api<Agent>('POST', `${a(id)}/update`),
+  restartOutdated: (force = false) => api<{ restarted: ID[]; skipped: { id: ID; reason: string }[] }>('POST', '/api/agents/restart-outdated', force ? { force } : {}),
   teamCheck: (projectId: ID) => api<{ sent: boolean; reason?: string }>('POST', `/api/projects/${enc(projectId)}/team-check`),
   /** Feedback #11: the commander ticks or unticks an acceptance criterion. */
   questAcceptance: (questId: ID, index: number, done: boolean) => api<Quest>('POST', `/api/quests/${enc(questId)}/acceptance/${index}`, { done }),

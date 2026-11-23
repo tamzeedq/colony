@@ -307,6 +307,9 @@ export function registerRoutes(app: FastifyInstance, d: HttpDeps) {
       iconSeed: iconSeed || undefined,
     }))
   })
+  // Outdated agents (iteration 1 #6): restart on the current image with the latest instructions.
+  app.post('/api/agents/:id/update', async (req) => agents.restartToUpdate(param(req, 'id')))
+  app.post('/api/agents/restart-outdated', async (req) => agents.restartOutdated({ force: bool(body(req), 'force') === true }))
   app.post('/api/agents/:id/message', async (req) => {
     const text = str(body(req), 'text', { required: true, max: 50_000 })
     return agents.message(param(req, 'id'), text)

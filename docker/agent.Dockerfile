@@ -10,7 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI (headless runtime for every agent)
-RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
+# Pinned so a rebuild never silently changes agent behaviour. Upgrade deliberately: bump this,
+# run `npm run agent:image`, then "Restart outdated agents" in the Ops Deck.
+ARG CLAUDE_CODE_VERSION=2.1.330
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && npm cache clean --force
 
 # Supabase CLI for migrations against the base's dev stack (docs/phase4.md). Same pin as the
 # control plane, so local and agent tooling agree.

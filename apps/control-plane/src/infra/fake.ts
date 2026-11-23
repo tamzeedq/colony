@@ -91,6 +91,8 @@ export interface FakeDriver extends InfraDriver {
   /** Next mergeToMain returns exactly this (one-shot). */
   nextMergeResult(r: MergeResult): void
   setPing(ok: boolean): void
+  /** Image ids returned by imageId() (tests change them to simulate a rebuilt image). */
+  imageIds: Map<string, string>
   /** Local-access sidecars by container name (feedback #19). */
   sidecars: Map<string, { slug: string; hostPort: number; agentId?: string; targetPort?: number }>
   /** Shells opened with openShell, in order. */
@@ -119,6 +121,7 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
     volumes: new Set(),
     shells: [],
     sidecars: new Map(),
+    imageIds: new Map(),
     pushes: [],
     execHandler: () => ({ exitCode: 0, stdout: '', stderr: '' }),
     nextPushResult(r) {
@@ -272,6 +275,11 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
     async stopPreview(agentId) {
       record('stopPreview', [agentId])
       self.sidecars.delete(names.previewSidecar(agentId))
+    },
+
+    async imageId(image) {
+      record('imageId', [image])
+      return self.imageIds.get(image) ?? 'sha256:fake-image-1'
     },
 
     async diff(slug, branch, base) {

@@ -161,7 +161,7 @@ export class AgentManager {
     const token = randomBytes(32).toString('base64url')
     const rec: AgentRecord = {
       agent, tokenHash: sha256(token), createdAt: t,
-      internal: { desired: 'run', pending: task ? [task] : [], startedAt: t },
+      internal: { desired: 'run', pending: task ? [task] : [], startedAt: t, ...(input.rolePrompt?.trim() ? { promptCustom: true } : {}) },
     }
     this.store.saveAgent(rec)
     this.store.broadcastSnapshot()
@@ -211,6 +211,8 @@ export class AgentManager {
         memoryMb: this.config.agentMemoryMb, cpus: this.config.agentCpus,
       })
       this.store.patchAgent(id, { container: { ...this.get(id).agent.container, name, cpuLimit: this.config.agentCpus, health: 'ok' } }, { startedAt: nowIso() })
+      const imageId = await this.infra.imageId?.(this.config.agentImage).catch(() => undefined)
+      this.store.patchAgent(id, { outdated: [] }, { launch: { imageId } })
       this.armTimer(id, this.config.runnerGraceMs * BOOT_TIMEOUT_FACTOR, 'never connected after start')
     } catch (e) {
       const msg = (e as Error).message
@@ -502,6 +504,57 @@ export class AgentManager {
     return { ok: true }
   }
 
+  // ── outdated agents (iteration 1 #6) ─────────────────────────────────────────
+
+  private lastOutdatedCheck = 0
+
+  /** The role prompt Colony would give this agent now (role files may have changed). */
+  private composedPrompt(rec: AgentRecord): string | undefined {
+    const p = this.store.projects.get(rec.agent.projectId)?.project
+    if (!p || rec.internal.promptCustom) return undefined
+    const orchestrator = this.store.projectAgents(p.id).find((a) => a.agent.role === 'orchestrator')?.agent.callsign
+    return this.roles.compose(rec.agent.role, { project: p.name, stack: p.stack, goal: p.goal, orchestrator })
+  }
+
+  /** Flag agents started on an older image or older instructions. Throttled (default 60 s). */
+  async refreshOutdated(force = false, everyMs = 60_000) {
+    const now = Date.now()
+    if (!force && now - this.lastOutdatedCheck < everyMs) return
+    this.lastOutdatedCheck = now
+    const current = await this.infra.imageId?.(this.config.agentImage).catch(() => undefined)
+    for (const rec of [...this.store.agents.values()]) {
+      if (rec.agent.status === 'error' || rec.agent.status === 'done') continue
+      const reasons: ('image' | 'instructions')[] = []
+      const started = rec.internal.launch?.imageId
+      if (current && started && current !== started) reasons.push('image')
+      const prompt = this.composedPrompt(rec)
+      if (prompt !== undefined && prompt.trim() !== rec.agent.rolePrompt.trim()) reasons.push('instructions')
+      const prev = rec.agent.outdated ?? []
+      if (prev.join() !== reasons.join()) this.store.patchAgent(rec.agent.id, { outdated: reasons })
+    }
+  }
+
+  /** Restart with the latest instructions (unless customised) on the current image. */
+  async restartToUpdate(agentId: string) {
+    const rec = this.get(agentId)
+    const prompt = this.composedPrompt(rec)
+    if (prompt !== undefined && prompt.trim() !== rec.agent.rolePrompt.trim()) this.store.patchAgent(agentId, { rolePrompt: prompt })
+    return this.restart(agentId)
+  }
+
+  /** Restart every outdated agent (skips ones mid-command unless forced). */
+  async restartOutdated(opts: { force?: boolean } = {}) {
+    await this.refreshOutdated(true)
+    const restarted: string[] = [], skipped: { id: string; reason: string }[] = []
+    for (const rec of [...this.store.agents.values()]) {
+      if (!rec.agent.outdated?.length) continue
+      if (!opts.force && ['running', 'editing', 'thinking'].includes(rec.agent.status)) { skipped.push({ id: rec.agent.id, reason: `busy (${rec.agent.status})` }); continue }
+      await this.restartToUpdate(rec.agent.id)
+      restarted.push(rec.agent.id)
+    }
+    return { restarted, skipped }
+  }
+
   async restart(agentId: string) {
     const rec = this.get(agentId)
     const token = randomBytes(32).toString('base64url')
@@ -546,6 +599,7 @@ export class AgentManager {
       }
     }
     if (input.rolePrompt !== undefined) patch.rolePrompt = input.rolePrompt // applies on next restart
+    if (input.rolePrompt !== undefined) rec.internal.promptCustom = true
     if (input.budgetCapUsd !== undefined) patch.budgetCapUsd = input.budgetCapUsd
     this.store.patchAgent(agentId, patch)
     if (patch.model) this.send(agentId, { type: 'set_model', model: patch.model })
