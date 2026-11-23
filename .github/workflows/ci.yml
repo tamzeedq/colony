@@ -9,6 +9,10 @@ on:
         description: Also run the Docker integration tests
         type: boolean
         default: false
+      screenshots:
+        description: Regenerate the UI screenshots and upload them as an artifact (not committed)
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -92,3 +96,25 @@ jobs:
       - run: npm test -w @colony/control-plane
         env:
           COLONY_DOCKER_TESTS: '1'
+
+  screenshots:
+    name: Regenerate UI screenshots (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/ui
+      - run: npm run screenshots
+      # Uploaded as an artifact only; never committed from CI.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: apps/ui/screenshots/
+          retention-days: 14

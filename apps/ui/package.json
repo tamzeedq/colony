@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
+    "screenshots": "node ../../scripts/screenshots.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
