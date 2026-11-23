@@ -15,7 +15,8 @@
     "test:ui": "npm run test:e2e -w @colony/ui",
     "agent:image": "npm run build -w @colony/agent-runner && docker build -f docker/agent.Dockerfile -t colony-agent:dev docker",
     "spike:headless": "node spikes/01-headless/run.mjs",
-    "dev:cp": "npm run dev -w @colony/control-plane"
+    "dev:cp": "npm run dev -w @colony/control-plane",
+    "e2e:agents": "node scripts/e2e-agents.mjs"
   },
   "engines": {
     "node": ">=22"
