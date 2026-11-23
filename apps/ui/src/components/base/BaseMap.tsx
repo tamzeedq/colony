@@ -290,10 +290,14 @@ export function StationCard({ agent, x, y, onOpen, selected, className }: { agen
       style={{ left: x - STATION.left, top: y - STATION.top }}>
       <div className="flex items-center gap-2">
         <AgentIcon agent={agent} size={26} showRole={false} />
-        <span className="min-w-0 flex-1 truncate font-display text-[15px] font-semibold">{agent.callsign}</span>
-        <span className="shrink-0 font-mono text-[10px] text-ink-muted"><b className="font-semibold text-ink-soft">{ROLES[agent.role].code}</b> · {modelInfo(agent.model).short} {modelInfo(agent.model).pips}</span>
+        <span className="min-w-0 flex-1 truncate font-display text-[15px] font-semibold" title={agent.callsign}>{agent.callsign}</span>
+        <b className="shrink-0 font-mono text-[10px] font-semibold text-ink-soft">{ROLES[agent.role].code}</b>
       </div>
-      <div className={cx('my-2 inline-flex items-center gap-1.5 rounded-full border px-2 text-xs font-semibold', s.badge)}>{s.glyph} {s.label}</div>
+      {/* Status and model share the second row, so the callsign always has room. */}
+      <div className="my-2 flex items-center gap-1.5">
+        <span className={cx('inline-flex min-w-0 items-center gap-1.5 truncate rounded-full border px-2 text-xs font-semibold', s.badge)}>{s.glyph} {s.label}</span>
+        <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-muted">{modelInfo(agent.model).short} {modelInfo(agent.model).pips}</span>
+      </div>
       <div className="truncate font-mono text-[11px] text-ink-soft">{agent.currentAction ?? '—'}</div>
       <div className="mt-2 flex items-center gap-1.5">
         <span className="flex-1"><Bar pct={agent.contextPct} className={agent.contextPct > 85 ? 'bg-st-error' : 'bg-ink-muted'} h="h-[3px]" /></span>

@@ -4,7 +4,8 @@ test('Pause all counts down, Cancel aborts', async ({ page }) => {
   await page.goto('/roster?mock&static')
   await page.getByRole('button', { name: /Pause all/ }).click()
   const bar = page.getByRole('status').filter({ hasText: /Pausing in \d/ })
-  await expect(bar).toContainText('Pausing in 3…')
+  // The countdown may already be at 2 or 1 by the time this runs; any second counts.
+  await expect(bar).toContainText(/Pausing in [1-3]…/)
   await bar.getByRole('button', { name: 'Cancel' }).click()
   await expect(bar).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Pause all/ })).toBeVisible()
