@@ -4,7 +4,7 @@
 // Fallback (reduced motion, or no WebGL): the CSS link lines below, no pan/zoom/pulses.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ActivityEvent, Agent, Project } from '@/types/colony'
-import { STATUS, ROLES, modelInfo } from '@/design/status'
+import { STATUS, agentStatusStyle, ROLES, modelInfo } from '@/design/status'
 import { AgentIcon } from '@/components/agent/AgentIcon'
 import { useStore, projectAgents } from '@/store/store'
 import { Bar } from '@/components/ui/controls'
@@ -133,6 +133,9 @@ export function BaseMap({ project, height = 520 }: { project: Project; height?: 
       if (!live) return
       if (!ok) { setFailed(true); return }
       sceneRef.current = scene
+      // The map may have grown while Pixi was starting (the full-height layout sizes it after
+      // mount); a resize observed before now was dropped, so size the renderer to the host again.
+      scene.resize(host.clientWidth, host.clientHeight)
       scene.setCamera(cam.current)
       scene.setModel(model.current)
       setReady(true)
@@ -258,7 +261,7 @@ export function BaseMap({ project, height = 520 }: { project: Project; height?: 
 
 function HqCard({ agent, x, y, questCount, className }: { agent: Agent; x: number; y: number; questCount: number; className?: string }) {
   const { dispatch } = useStore()
-  const s = STATUS[agent.status]
+  const s = agentStatusStyle(agent)
   return (
     <button type="button" data-station={agent.id} onClick={() => dispatch({ type: 'inspect', id: agent.id })}
       className={cx('absolute w-[250px] rounded-2xl border-2 border-st-think bg-raised p-3.5 text-left shadow-raised', className)} style={{ left: x - 125, top: y - HQ_TOP }}>
@@ -278,7 +281,7 @@ function HqCard({ agent, x, y, questCount, className }: { agent: Agent; x: numbe
 
 /** A worker station. `className` carries one-shot key-moment motion (animate-pop / animate-shake). */
 export function StationCard({ agent, x, y, onOpen, selected, className }: { agent: Agent; x: number; y: number; onOpen: () => void; selected?: boolean; className?: string }) {
-  const s = STATUS[agent.status]
+  const s = agentStatusStyle(agent)
   const cpu = containerCpu(agent.container)
   return (
     <button type="button" data-station={agent.id} onClick={onOpen} title={`${agent.callsign} · ${ROLES[agent.role].name} · ${s.label} · ${(agent.tokensToday / 1000).toFixed(0)}k tokens · CPU ${cpu.label} (${cpu.detail})`}

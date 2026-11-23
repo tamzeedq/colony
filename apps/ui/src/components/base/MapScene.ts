@@ -149,7 +149,23 @@ export class MapScene {
     return this.colors[STATUS[status].token] ?? this.colors['st-run']
   }
 
+  private frameCount = 0
+
+  /** Keep the renderer exactly the size of its canvas box (and the display's pixel ratio).
+   *  If they drift apart, the canvas is CSS-stretched and the links stop lining up with the
+   *  HTML cards, e.g. after a resize missed during init, or moving to another monitor. */
+  private syncSize() {
+    const app = this.app
+    if (!app) return
+    const w = Math.round(app.canvas.clientWidth), h = Math.round(app.canvas.clientHeight)
+    const dpr = window.devicePixelRatio || 1
+    if (!w || !h) return
+    if (app.renderer.resolution !== dpr) app.renderer.resolution = dpr
+    if (Math.round(app.screen.width) !== w || Math.round(app.screen.height) !== h || app.renderer.resolution !== dpr) this.resize(w, h)
+  }
+
   private frame(now: number) {
+    if (this.frameCount++ % 15 === 0) this.syncSize()
     const { hub, workers } = this.model
     const march = ((now / 1000) * MARCH_PX_PER_S) % (DASH + GAP)
 

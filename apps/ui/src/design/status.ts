@@ -87,3 +87,11 @@ export function meterTone(pct: number, warn = 70, critical = 90) {
   if (pct >= warn) return { bar: 'bg-st-blocked', text: 'text-st-blocked', prefix: '▲ ' }
   return { bar: 'bg-ink', text: 'text-ink', prefix: '' }
 }
+
+/** The status style for an agent, showing "Pausing…" while a pause is requested but the agent
+ *  hasn't stopped yet (it finishes its current step first). */
+export function agentStatusStyle(agent: { status: AgentStatus; pauseRequested?: boolean }): StatusStyle {
+  const s = STATUS[agent.status]
+  if (!agent.pauseRequested || agent.status === 'paused') return s
+  return { ...STATUS.paused, glyph: '‖', label: 'Pausing…', badge: `${STATUS.paused.badge} border-dashed` }
+}

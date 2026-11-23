@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { useStore, projectByKey, projectAgents, sessionShare } from '@/store/store'
-import { STATUS } from '@/design/status'
+import { STATUS, agentStatusStyle } from '@/design/status'
 import { BaseMap } from '@/components/base/BaseMap'
 import { QuestBoard } from '@/components/base/QuestBoard'
 import { SupabasePanel } from '@/components/base/SupabasePanel'
@@ -110,7 +110,7 @@ function TeamStrip({ project }: { project: Project }) {
   return (
     <div className="grid grid-cols-6 gap-px border-t border-line-soft bg-line-soft">
       {projectAgents(state, project).map((a) => {
-        const s = STATUS[a.status]
+        const s = agentStatusStyle(a)
         return (
           <button key={a.id} type="button" onClick={() => dispatch({ type: 'inspect', id: a.id })} className="bg-ground px-3.5 py-2.5 text-left">
             <div className="flex items-baseline justify-between"><b className="font-display text-sm font-semibold">{a.callsign}</b><span className={cx('text-xs font-semibold', s.text)}>{s.glyph}</span></div>
