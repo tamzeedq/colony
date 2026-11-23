@@ -298,4 +298,29 @@ describe('github publish', () => {
     assert.equal(fail.status, 502)
     assertNoToken(c, fail.text, ok.text)
   })
+
+  test('status: counts merged commits not yet on GitHub; unknown before the first publish', async () => {
+    const p = await project(c)
+    await api(c, 'PATCH', `/api/projects/${p.id}/github`, { repo: 'acme/readable', base: 'main', mode: 'push' })
+    await api(c, 'PUT', '/api/github/token', { token: TOKEN })
+    const slug = c.app.store.projects.get(p.id)!.slug
+    const mainSha = () => c.infra.projects.get(slug)!.mainSha
+
+    const before = await api(c, 'GET', `/api/projects/${p.id}/github/status`)
+    assert.equal(before.status, 200, before.text)
+    assert.deepEqual(before.body, { ahead: null, mainSha: mainSha() })
+
+    await mergedMr(c, p, 'agent/one')
+    assert.equal((await api(c, 'POST', `/api/projects/${p.id}/github/publish`)).status, 200)
+    const synced = await api(c, 'GET', `/api/projects/${p.id}/github/status`)
+    assert.deepEqual(synced.body, { ahead: 0, lastPublishSha: mainSha(), mainSha: mainSha() })
+
+    const published = mainSha()
+    await mergedMr(c, p, 'agent/two')
+    await mergedMr(c, p, 'agent/three')
+    const ahead = await api(c, 'GET', `/api/projects/${p.id}/github/status`)
+    assert.deepEqual(ahead.body, { ahead: 2, lastPublishSha: published, mainSha: mainSha() })
+    assert.equal((await api(c, 'GET', '/api/projects/nope/github/status')).status, 404)
+    assertNoToken(c, ahead.text)
+  })
 })

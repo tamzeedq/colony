@@ -5,7 +5,7 @@ import { StatusBadge, ModelBadge } from '@/components/ui/primitives'
 import { Bar } from '@/components/ui/controls'
 import { AgentIcon } from '@/components/agent/AgentIcon'
 import { useStore } from '@/store/store'
-import { cx, usd } from '@/lib/util'
+import { cx, usd, xpPct } from '@/lib/util'
 import { OutdatedChip } from '@/components/agent/Outdated'
 
 const stop = (e: SyntheticEvent) => e.stopPropagation()
@@ -45,7 +45,7 @@ export function AgentCard({ agent, selected, onToggle }: { agent: Agent; selecte
       <div className="grid grid-cols-3 gap-2.5 border-t border-line-soft pt-2.5">
         <div><div className="text-label">Context</div><div className="my-1"><Bar pct={agent.contextPct} className={agent.contextPct > 85 ? 'bg-st-error' : 'bg-ink-muted'} /></div><div className={cx('font-mono text-[11px]', agent.contextPct > 85 ? 'text-st-error' : 'text-ink-dim')}>{agent.contextPct}%</div></div>
         <div><div className="text-label">Spent</div><div className="text-numeral mt-1 text-[15px]">{usd(agent.spendTodayUsd)}</div><div className="font-mono text-[11px] text-ink-dim">{Math.round(agent.sessionShare * 100)}% session</div></div>
-        <div><div className="text-label">Lv {agent.level} · XP</div><div className="my-1"><Bar pct={agent.xp} className="bg-ink-soft" /></div><div className="font-mono text-[11px] text-ink-dim">{agent.questsDone} quests</div></div>
+        <div><div className="text-label">Lv {agent.level} · XP</div><div className="my-1"><Bar pct={xpPct(agent.xp)} className="bg-ink-soft" /></div><div className="font-mono text-[11px] text-ink-dim">{agent.questsDone} quests</div></div>
       </div>
     </article>
   )

@@ -41,3 +41,7 @@ export const isTypingTarget = (t: EventTarget | null) => {
   if (!el) return false
   return el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)
 }
+
+/** XP needed per level (mirrors the control plane's XP_PER_LEVEL). */
+export const XP_PER_LEVEL = 300
+export const xpPct = (xp: number) => Math.max(0, Math.min(100, Math.round((xp / XP_PER_LEVEL) * 100)))

@@ -101,6 +101,7 @@ export const endpoints = {
   testGithub: () => api<GithubTokenStatus>('POST', '/api/github/test'),
   patchProjectGithub: (projectId: ID, patch: { repo?: string | null; base?: string; mode?: GithubConfig['mode'] }) =>
     api<Project>('PATCH', `/api/projects/${enc(projectId)}/github`, patch),
+  githubStatus: (projectId: ID) => api<GithubAheadStatus>('GET', `/api/projects/${enc(projectId)}/github/status`),
   publishGithub: (projectId: ID) => api<GithubPublishResult>('POST', `/api/projects/${enc(projectId)}/github/publish`),
 
   // Security and host (feedback items 6 and 16)
@@ -109,6 +110,8 @@ export const endpoints = {
   setKeepAwake: (mode: KeepAwakeMode) => api<KeepAwakeState>('PUT', '/api/keep-awake', { mode }),
 }
 
+/** GET /api/projects/:id/github/status: `ahead` is null when unknown (never published). */
+export interface GithubAheadStatus { ahead: number | null; lastPublishSha?: string; mainSha: string }
 export interface GithubPublishResult { url?: string; branch: string; sha: string; mode: GithubConfig['mode']; mergeRequests: number }
 
 /** Pull a MergeRequest out of an approve / request-changes response (either shape). */

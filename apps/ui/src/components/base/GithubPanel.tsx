@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '@/store/store'
-import { endpoints } from '@/api/endpoints'
+import { endpoints, type GithubAheadStatus } from '@/api/endpoints'
 import { errorMessage } from '@/api/client'
 import { Segmented, inputCls } from '@/components/ui/controls'
 import { ago, cx } from '@/lib/util'
@@ -13,6 +13,24 @@ import { RepoAccessPanel } from './RepoAccessPanel'
 
 const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}\/[A-Za-z0-9._-]{1,100}$/
 const MODES: { id: GithubConfig['mode']; label: string }[] = [{ id: 'pr', label: 'Pull request' }, { id: 'push', label: 'Push' }]
+
+/** Merged commits on Colony's main that are not on GitHub yet (null while unknown). Refreshes
+ *  when the project or its last publish changes, and every 30 s. */
+export function useGithubAhead(project: Project): GithubAheadStatus | null {
+  const { mode } = useStore()
+  const [s, setS] = useState<GithubAheadStatus | null>(null)
+  const repo = project.github?.repo
+  const last = project.github?.lastPublish?.sha
+  useEffect(() => {
+    if (mode !== 'live' || !repo) { setS(null); return }
+    let on = true
+    const load = () => endpoints.githubStatus(project.id).then((r) => { if (on) setS(r) }, () => { if (on) setS(null) })
+    void load()
+    const t = setInterval(load, 30_000)
+    return () => { on = false; clearInterval(t) }
+  }, [mode, project.id, repo, last])
+  return s
+}
 
 export function GithubPanel({ project }: { project: Project }) {
   const { mode, dispatch } = useStore()
@@ -45,6 +63,7 @@ export function GithubPanel({ project }: { project: Project }) {
 
   const repoOk = REPO_RE.test(repo.trim())
   const dirty = repo.trim() !== (gh?.repo ?? '') || base.trim() !== (gh?.base ?? 'main') || pubMode !== (gh?.mode ?? 'pr')
+  const ahead = useGithubAhead(project)
   const canPublish = !!gh?.repo && !dirty && !!token?.configured && !busy
 
   const save = async () => {
@@ -83,6 +102,11 @@ export function GithubPanel({ project }: { project: Project }) {
       {!live && (
         <div className="text-xs text-ink-dim">
           {gh?.repo ? 'Publishing merged work to GitHub works in live mode.' : 'Not connected. In live mode, set a repo here and publish merged work with one click.'}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => void dispatch({ type: 'toast', toast: { id: `demo-${Date.now()}`, title: 'Demo only — not sent', tone: 'heads_up', at: Date.now() } })}
+              className="rounded-md border border-transparent bg-ink px-2.5 py-1 text-xs font-semibold text-ground">↑ Publish to GitHub</button>
+            <span className="text-xs font-semibold text-st-blocked">Demo: 3 merged commits not on GitHub</span>
+          </div>
         </div>
       )}
 
@@ -116,6 +140,11 @@ export function GithubPanel({ project }: { project: Project }) {
               className="rounded-md border border-transparent bg-ink px-2.5 py-1 text-xs font-semibold text-ground transition duration-[80ms] ease-standard hover:brightness-110 disabled:opacity-50">
               {busy === 'publish' ? 'Publishing…' : '↑ Publish to GitHub'}
             </button>
+            {gh?.repo && ahead && ahead.ahead != null && ahead.ahead > 0 && (
+              <span className="text-xs font-semibold text-st-blocked">
+                {ahead.ahead} merged commit{ahead.ahead === 1 ? '' : 's'} not on GitHub
+              </span>
+            )}
             {last && (
               <span className="min-w-0 truncate text-xs text-ink-dim">
                 Last {ago(last.at)} ago ·{' '}

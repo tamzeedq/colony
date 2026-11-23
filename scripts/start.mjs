@@ -95,7 +95,7 @@ if (!readEnvKey('CLAUDE_CODE_OAUTH_TOKEN')) {
 const children = []
 let stopping = false
 
-function start(name, tint, cwd, args, env = {}) {
+function start(name, tint, cwd, args, env = {}, onLine) {
   const child = spawn(process.execPath, args, {
     // COLONY_LAUNCHER_PID: both servers exit if this launcher disappears (window closed, killed).
     cwd, env: { ...process.env, ...(color ? { FORCE_COLOR: '1' } : { NO_COLOR: '1', FORCE_COLOR: '0' }), COLONY_LAUNCHER_PID: String(process.pid), ...env }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
@@ -107,7 +107,7 @@ function start(name, tint, cwd, args, env = {}) {
       buf += d.toString()
       const lines = buf.split(/\r?\n/)
       buf = lines.pop() ?? ''
-      for (const line of lines) if (line.trim()) console.log(`${prefix} ${line}`)
+      for (const line of lines) if (line.trim()) { console.log(`${prefix} ${line}`); onLine?.(line) }
     })
   }
   child.on('exit', (code, signal) => {
@@ -123,6 +123,20 @@ function start(name, tint, cwd, args, env = {}) {
   })
   children.push(child)
   return child
+}
+
+/** Open the Ops Deck in the default browser (COLONY_NO_OPEN=1 turns this off). The first time
+ *  that is the pairing link; the URL is passed to the OS, never printed. */
+function openOpsDeck(url) {
+  if (process.env.COLONY_NO_OPEN === '1') return
+  if (!/^https?:\/\/[^\s"&|<>^]+$/.test(url)) return
+  try {
+    const child = process.platform === 'win32'
+      ? spawn('cmd.exe', ['/c', 'start', '""', url], { windowsHide: true, windowsVerbatimArguments: true, stdio: 'ignore', detached: true })
+      : spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], { stdio: 'ignore', detached: true })
+    child.on('error', () => say('Could not open a browser automatically; open the link above yourself.'))
+    child.unref()
+  } catch { /* no browser available */ }
 }
 
 function shutdown(code = 0, requested = false) {
@@ -145,8 +159,17 @@ const parentWatch = setInterval(() => {
 }, 2000)
 parentWatch.unref()
 
+let pairLink = null
+let firstStart = false
+
 say(`Docker ${dockerVersion} · starting the control plane on :${CP_PORT}, then the Ops Deck on :${UI_PORT}`)
-start('cp', '36', join(root, 'apps', 'control-plane'), ['--import', 'tsx', 'src/main.ts'], { COLONY_LOG_LEVEL: process.env.COLONY_LOG_LEVEL || 'warn' })
+start('cp', '36', join(root, 'apps', 'control-plane'), ['--import', 'tsx', 'src/main.ts'], { COLONY_LOG_LEVEL: process.env.COLONY_LOG_LEVEL || 'warn' }, (line) => {
+  // The control plane prints the pairing link every start, and a marker when it just created the
+  // admin token. Keep the link in memory only; it is never printed again here.
+  const m = line.match(/Open the Ops Deck:\s*(\S+)/)
+  if (m) pairLink = m[1]
+  if (/First start: admin token created/.test(line)) firstStart = true
+})
 
 // The UI proxies /api to the control plane, so start it once the control plane answers.
 let cpUp = false
@@ -161,6 +184,7 @@ else {
   for (const end = Date.now() + 60_000; Date.now() < end && !stopping; await sleep(500)) {
     if (await ok(`http://localhost:${UI_PORT}/`)) { uiUp = true; break }
   }
+  if (uiUp) openOpsDeck(firstStart && pairLink ? pairLink : `http://localhost:${UI_PORT}`)
   if (uiUp) say(paint('32', `Colony is running. The first time, open the "Open the Ops Deck" link above to pair this browser; after that, http://localhost:${UI_PORT}. Ctrl+C stops it.`))
   else if (!stopping) say(paint('33', 'The Ops Deck did not answer within 60 s; check the output above.'))
 }

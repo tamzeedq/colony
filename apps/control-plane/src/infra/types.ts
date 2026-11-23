@@ -88,6 +88,9 @@ export interface InfraDriver {
 
   /** Newest-first commits on a branch. */
   branchLog?(slug: string, branch: string, limit: number): Promise<CommitInfo[]>
+  /** Commits reachable from `to` but not from `from` (git rev-list --count from..to). Null
+   *  when `from` is not a known commit (for example it was rewritten away). */
+  countCommits?(slug: string, from: string, to: string): Promise<number | null>
   /** Refs under a prefix such as refs/colony/checkpoints/<agentId>/. */
   listRefs?(slug: string, prefix: string): Promise<{ ref: string; sha: string }[]>
   /** Point a refs/colony/... ref at a commit. */

@@ -119,6 +119,13 @@ git log -n "$2" --format='%H%x09%ct%x09%s' "refs/heads/$1" | while IFS="$(printf
 done
 `
 
+/** $1 = from sha, $2 = to ref or sha. Prints the count of commits in $1..$2; exit 3 when $1 is unknown. */
+export const COUNT_COMMITS = `set -eu
+cd ${REPO}
+git rev-parse --verify --quiet "$1^{commit}" >/dev/null || { echo "no such commit: $1" >&2; exit 3; }
+git rev-list --count "$1..$2"
+`
+
 /** $1 = ref prefix (refs/colony/...). Prints `<ref> <sha>`. */
 export const LIST_REFS = `set -eu
 cd ${REPO}
