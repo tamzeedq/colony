@@ -8,3 +8,5 @@ dist
 .DS_Store
 docker/runner/
 .claude/worktrees/
+apps/ui/test-results/
+apps/ui/playwright-report/

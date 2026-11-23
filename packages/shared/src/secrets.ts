@@ -113,7 +113,7 @@ export function scanDiffForSecrets(diff: string): { files: DiffSecretFinding[]; 
     if (raw.startsWith('diff --git ')) {
       flushFile()
       const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(raw)
-      path = m ? m[2] : raw.slice(11)
+      path = m?.[2] ?? raw.slice(11)
       deleted = false
       inHunk = false
       continue
