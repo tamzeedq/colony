@@ -1,8 +1,10 @@
 # Screens
 
-Captured from the running app in mock data, frozen (`?mock&static`), with headless Chrome at device scale 1, full page. Regenerated 2026-11-11 (Phase 5) for every screen reachable by URL: World, Base, Roster, Spawn, Inbox, Found base, Settings (limits, alerts, roles), Merge review, Quest detail, Ambient.
+Captured from the running app in mock data, frozen (`?mock&static`), with headless Chromium at device scale 1, dark colour scheme, full page (Ambient is viewport-sized).
 
-The screens that need a click to reach (Inspector tabs, after-spawn toast, merged review, shortcut overlay, command palette, empty and error states, ultrawide inspector) are older captures. They still match the layout, but don't show the Phase 5 map canvas controls.
+Regenerate the screens that are reachable by URL with `npm run screenshots` from the repo root. That runs `apps/ui/e2e/screenshots.spec.ts` with `COLONY_SCREENSHOTS=1`; the spec is skipped in a normal `npm run test:ui` run. The manual `screenshots` job in `.github/workflows/ci.yml` does the same on CI (Actions > CI > Run workflow, tick `screenshots`) and uploads the `ui-screenshots` artifact. CI never commits the images, so copy them in yourself. CI renders on Linux, so fonts can differ slightly from a local Windows or macOS run.
+
+Interaction-only screens are not regenerated. They need a click or key press to reach, so they are kept from older captures. They still match the layout but don't show the current map canvas controls: Inspector tabs (04–07), after-spawn toast (09), merged review (16), shortcut overlay (18), command palette (19), empty and error states (20), and ultrawide inspector (24).
 
 ## World · 1440
 
