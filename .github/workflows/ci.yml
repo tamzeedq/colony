@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      docker_tests:
+        description: Also run the Docker integration tests
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, unit tests, UI build, LF check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: LF check (shell, mjs, Dockerfile, git hooks)
+        run: |
+          bad=$(git ls-files --eol | grep -E '(i|w)/(crlf|mixed)' | awk '{print $NF}' | grep -E '\.(sh|mjs)$|(^|/)Dockerfile|\.Dockerfile$|git-hooks/' || true)
+          if [ -n "$bad" ]; then echo "CRLF line endings found in:"; echo "$bad"; exit 1; fi
+
+      - name: Typecheck
+        run: |
+          npx tsc --noEmit -p packages/shared
+          npx tsc --noEmit -p packages/agent-runner
+          npx tsc --noEmit -p apps/control-plane
+
+      - name: Unit tests
+        run: |
+          npm test -w @colony/shared
+          npm test -w @colony/agent-runner
+          npm test -w @colony/control-plane
+        # Docker integration tests skip themselves unless COLONY_DOCKER_TESTS=1 (not set here).
+
+      - name: Build UI (includes its typecheck)
+        run: npm run build -w @colony/ui
+
+  e2e:
+    name: UI smoke tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/ui
+      - run: npm run test:ui
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/ui/playwright-report
+            apps/ui/test-results
+          retention-days: 7
+
+  docker-integration:
+    name: Docker integration tests (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.docker_tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run agent:image
+      - run: npm test -w @colony/control-plane
+        env:
+          COLONY_DOCKER_TESTS: '1'

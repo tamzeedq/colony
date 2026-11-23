@@ -12,6 +12,7 @@
     "stop": "node scripts/stop.mjs",
     "dev:ui": "npm run dev -w @colony/ui",
     "build:ui": "npm run build -w @colony/ui",
+    "test:ui": "npm run test:e2e -w @colony/ui",
     "agent:image": "npm run build -w @colony/agent-runner && docker build -f docker/agent.Dockerfile -t colony-agent:dev docker",
     "spike:headless": "node spikes/01-headless/run.mjs",
     "dev:cp": "npm run dev -w @colony/control-plane"
