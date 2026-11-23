@@ -1,7 +1,8 @@
 // Colony control plane entry point: `npm run dev -w @colony/control-plane`.
 
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { ensureAdminToken, pairingLink } from './admin'
+import { adminTokenFile, ensureAdminToken, pairingLink } from './admin'
 import { createApp } from './app'
 import { loadConfig } from './config'
 import { createDockerDriver } from './infra/docker'
@@ -12,6 +13,7 @@ import { createCliSupabaseDriver } from './infra/supabase'
 
 async function main() {
   const config = loadConfig()
+  const firstStart = !config.adminToken && !existsSync(adminTokenFile(config.dataDir))
   const adminToken = config.adminToken || ensureAdminToken(config.dataDir)
   config.adminToken = adminToken
   const infra = createDockerDriver({ image: config.agentImage })
@@ -28,6 +30,8 @@ async function main() {
   console.log(`[colony] control plane on http://${config.bind}:${port} · data ${config.dataDir} · runners via ${config.publicRunnerUrl}`)
   // The one place the admin token is printed: the browser pairs by opening this link.
   console.log(`Open the Ops Deck: ${pairingLink(config.uiUrl, adminToken)}`)
+  // Marker for the launcher (scripts/start.mjs): a brand-new token means this browser must pair.
+  if (firstStart) console.log('[colony] First start: admin token created.')
 
   let closing = false
   const shutdown = async (sig: string) => {

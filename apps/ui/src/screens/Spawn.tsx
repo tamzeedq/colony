@@ -39,7 +39,6 @@ export function Spawn() {
   const [iconSeed, setIconSeed] = useState(randomIconSeed)
   const [cap, setCap] = useState(8)
   const [task, setTask] = useState('')
-  const [tools, setTools] = useState<string[]>(['read', 'edit', 'bash', 'supabase'])
   const [customPrompt, setCustomPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -80,7 +79,7 @@ export function Spawn() {
       provider: 'claude-subscription', iconSeed,
       container: { name: `${project.id.slice(2)}-${id}`, cpuPct: 5, memMb: 300, memLimitMb: 4096, health: 'ok' },
       contextPct: 0, tokensToday: 0, spendTodayUsd: 0, budgetCapUsd: cap, sessionShare: 0, uptimeSec: 0, level: 1, xp: 0, questsDone: 0,
-      rolePrompt: role === 'custom' && customPrompt.trim() ? customPrompt.trim() : DESC[role], allowedTools: tools,
+      rolePrompt: role === 'custom' && customPrompt.trim() ? customPrompt.trim() : DESC[role], allowedTools: ['read', 'edit', 'bash'],
     }
     dispatch({ type: 'spawn', agent })
     nav(`/base/${project.key}`)
@@ -157,15 +156,10 @@ export function Spawn() {
             </div>
           </div>
           <div>
-            <h2 className="text-section mb-3">3 · Loadout</h2>
+            <h2 className="text-section mb-3">3 · Budget</h2>
             <div className="mb-3 flex flex-wrap items-end gap-3.5">
               <Field label="Daily budget cap"><input value={`$${cap.toFixed(2)}`} onChange={(e) => setCap(Number(e.target.value.replace(/[^0-9.]/g, '')) || 0)} className={cx(inputCls, 'w-28')} /></Field>
               <div className="flex gap-1.5">{[3, 8, 15].map((v) => <button key={v} type="button" onClick={() => setCap(v)} className={cx('rounded-full border px-2.5 py-1.5 text-xs', cap === v ? 'border-ink bg-ink text-ground' : 'border-line text-ink-soft')}>${v}</button>)}</div>
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-ink-soft">
-              {[['read', 'Read / Edit'], ['bash', 'Bash in container'], ['supabase', 'Supabase CLI'], ['webfetch', 'Web fetch'], ['pr', 'Open PRs'], ['merge', 'Merge without approval']].map(([id, l]) => (
-                <label key={id}><input type="checkbox" checked={tools.includes(id)} onChange={() => setTools((t) => t.includes(id) ? t.filter((x) => x !== id) : [...t, id])} className="accent-[var(--color-you)]" /> {l}</label>
-              ))}
             </div>
           </div>
           {!orch && role === 'custom' && (

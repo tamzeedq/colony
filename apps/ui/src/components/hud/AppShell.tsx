@@ -6,7 +6,7 @@ import { TabBadge } from '@/components/alerts/TabBadge'
 import { Inspector } from '@/components/agent/Inspector'
 import { ToastStack, CriticalBanner } from '@/components/alerts/Toasts'
 import { AlertEffects } from '@/components/alerts/AlertEffects'
-import { ReconnectingBanner } from '@/components/states/Connection'
+import { ReconnectingBanner, DemoBanner } from '@/components/states/Connection'
 import { ShortcutOverlay, CommandPalette } from '@/components/states/Overlays'
 import { PausedChip, PauseToggle, PauseEffects, PauseBar, ShutdownButton, ShutdownDialog } from '@/components/hud/PauseControls'
 import { useHotkeys } from '@/hooks/useHotkeys'
@@ -117,6 +117,7 @@ export function AppShell() {
         <button type="button" aria-label="Keyboard shortcuts" onClick={() => dispatch({ type: 'overlay', overlay: 'shortcuts' })}
           className="h-8 w-8 rounded-md border border-line font-mono text-[13px] text-ink-muted">?</button>
       </header>
+      <DemoBanner />
       <ReconnectingBanner />
       <CriticalBanner />
       <div className={cx('flex-1', docked && 'pr-[820px]')}>

@@ -44,6 +44,8 @@ export interface FakeProject {
   repoUrl?: string
   projectName?: string
   mainSha: string
+  /** Every main sha so far, oldest first (countCommits). */
+  mainLog?: string[]
   branches: Map<string, FakeBranch>
   /** refs/colony/... -> sha (Phase 6). */
   refs: Map<string, string>
@@ -297,7 +299,10 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       if (!b) return { ok: false, conflict: false, message: `no such branch: ${branch}` }
       if (b.conflict) return { ok: false, conflict: true, message: `merge conflict merging ${branch} into main` }
       if (b.aheadOfMain === 0) return { ok: true, sha: p.mainSha, message: `${branch} is already merged; main unchanged` }
+      const log = p.mainLog ?? (p.mainLog = [p.mainSha])
+      if (log[log.length - 1] !== p.mainSha) log.push(p.mainSha)
       p.mainSha = sha()
+      log.push(p.mainSha)
       b.aheadOfMain = 0
       b.behindMain = 1
       for (const [n, other] of p.branches) if (n !== branch) other.behindMain += 1
@@ -310,6 +315,17 @@ export function createFakeDriver(opts: FakeDriverOptions = {}): FakeDriver {
       if (!b) throw new Error(`log ${branch} failed (exit 3): no such branch: ${branch}`)
       const commits = b.commits ?? [{ sha: b.sha, subject: `work on ${branch}`, at: new Date().toISOString() }]
       return commits.slice(0, limit).map((c) => ({ sha: c.sha, subject: c.subject, at: c.at, inMain: !!c.inMain }))
+    },
+    async countCommits(slug, from, to) {
+      record('countCommits', [slug, from, to])
+      assertSha(from)
+      const p = mustProject(slug)
+      const log = p.mainLog ?? (p.mainLog = [p.mainSha])
+      if (log[log.length - 1] !== p.mainSha) log.push(p.mainSha) // tests may set mainSha directly
+      const target = to === 'main' ? p.mainSha : to
+      const a = log.indexOf(from)
+      const b = log.indexOf(target)
+      return a < 0 || b < 0 ? null : Math.max(0, b - a)
     },
     async listRefs(slug, prefix) {
       record('listRefs', [slug, prefix])

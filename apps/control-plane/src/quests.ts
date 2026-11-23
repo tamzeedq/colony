@@ -48,6 +48,17 @@ const isAgentCheck = (a: AcceptanceItem) => (a.check ?? 'agent') === 'agent'
 
 const XP_BY_PRIORITY: Record<Priority, number> = { low: 60, normal: 100, high: 150 }
 
+/** XP needed per level; the remainder carries over. */
+export const XP_PER_LEVEL = 300
+
+export function applyXp(level: number, xp: number, reward: number): { level: number; xp: number; leveledUp: boolean } {
+  let total = Math.max(0, xp) + Math.max(0, reward)
+  let lv = Math.max(1, level)
+  const start = lv
+  while (total >= XP_PER_LEVEL) { total -= XP_PER_LEVEL; lv++ }
+  return { level: lv, xp: total, leveledUp: lv > start }
+}
+
 export class QuestService {
   /** Called after a worker completes a quest (Phase 6: automatic checkpoint). */
   onCompleted?: (quest: Quest, rec: AgentRecord, branchSha: string) => void
@@ -390,13 +401,15 @@ export class QuestService {
     const assignee = q.assigneeId ? this.store.agents.get(q.assigneeId) : undefined
     if (assignee) {
       this.store.addQuestOutcome(assignee.agent.id, 'done')
+      const prog = applyXp(assignee.agent.level, assignee.agent.xp, q.xpReward)
       this.store.patchAgent(assignee.agent.id, {
         questsDone: assignee.agent.questsDone + 1,
+        level: prog.level, xp: prog.xp,
         ...(assignee.agent.currentTaskId === q.id ? { currentTaskId: undefined } : {}),
       })
       this.store.addEvent({
         id: newId('ev'), at: nowIso(), agentId: assignee.agent.id, projectId: q.projectId, kind: 'quest_complete',
-        text: `Quest complete: "${q.title}" (+${q.xpReward} XP)`,
+        text: `Quest complete: "${q.title}" (+${q.xpReward} XP)${prog.leveledUp ? ` · Level ${prog.level}` : ''}`,
       })
       if (mr) this.agents.deliver(assignee.agent.id, `[Colony] Your quest ${q.id} "${q.title}" was merged to main. Before any further work, \`git fetch origin && git rebase origin/main\`.`)
     }

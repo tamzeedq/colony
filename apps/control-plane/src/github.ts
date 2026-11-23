@@ -186,6 +186,20 @@ export class GithubService {
     return [...this.store.mergeRequests.values()].filter((m) => m.projectId === projectId && m.status === 'merged' && !done.has(m.id))
   }
 
+  /** How far Colony's main is ahead of the last publish. `ahead` is null when unknown (never
+   *  published, the commit is gone, or the driver cannot count). */
+  async aheadStatus(projectId: string): Promise<{ ahead: number | null; lastPublishSha?: string; mainSha: string }> {
+    const rec = this.rec(projectId)
+    const branches = await this.infra.listBranches(rec.slug)
+    const mainSha = branches.find((b) => b.name === 'main')?.sha ?? ''
+    const lastPublishSha = rec.project.github?.lastPublish?.sha
+    let ahead: number | null = null
+    if (lastPublishSha && mainSha && this.infra.countCommits) {
+      try { ahead = await this.infra.countCommits(rec.slug, lastPublishSha, mainSha) } catch { ahead = null }
+    }
+    return { ahead, ...(lastPublishSha ? { lastPublishSha } : {}), mainSha }
+  }
+
   /** Secret findings recorded when flagged merge requests were merged (MergeService), for the
    *  merges this publish would push. */
   secretFindings(projectId: string) {
@@ -374,6 +388,11 @@ export function registerGithubRoutes(app: FastifyInstance, d: { github: GithubSe
     if (b.mode !== undefined && b.mode !== 'pr' && b.mode !== 'push') throw badRequest("'mode' must be 'pr' or 'push'")
     if (repo === undefined && base === undefined && b.mode === undefined) throw badRequest("send 'repo', 'base' and/or 'mode'")
     return github.configure(pid(req), { repo, base, mode: b.mode as 'pr' | 'push' | undefined })
+  })
+
+  app.get('/api/projects/:id/github/status', async (req) => {
+    if (!store.projects.has(pid(req))) throw notFound('project')
+    return github.aheadStatus(pid(req))
   })
 
   app.post('/api/projects/:id/github/publish', async (req) => {

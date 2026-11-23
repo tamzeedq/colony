@@ -11,7 +11,7 @@ import Dockerode from 'dockerode'
 import { execIn, type ExecResult } from './exec'
 import {
   DIFF, ENSURE_REPO, LIST_BRANCHES, MERGE, MERGE_EXIT, PRE_RECEIVE_HOOK, PUSH_EXIT, PUSH_REMOTE, REPO,
-  BRANCH_LOG, LIST_REFS, RESET_BRANCH, RESET_EXIT, SET_REF,
+  BRANCH_LOG, COUNT_COMMITS, LIST_REFS, RESET_BRANCH, RESET_EXIT, SET_REF,
 } from './git-scripts'
 import {
   ContainerNotRunningError, RefRejectedError,
@@ -383,6 +383,17 @@ export function createDockerDriver(opts: DockerDriverOptions = {}): DockerDriver
       const n = Math.max(1, Math.min(200, Math.floor(limit)))
       const r = await mustOk(await gitExec(slug, sh(BRANCH_LOG, branch, String(n))), `log ${branch}`)
       return parseBranchLog(r.stdout)
+    },
+
+    async countCommits(slug, from, to) {
+      assertSlug(slug)
+      assertSha(from)
+      if (to !== 'main') assertSha(to)
+      const r = await gitExec(slug, sh(COUNT_COMMITS, from, to === 'main' ? 'refs/heads/main' : to))
+      if (r.exitCode === 3) return null
+      const out = await mustOk(r, 'count commits')
+      const n = Number(out.stdout.trim().split(/\r?\n/).pop())
+      return Number.isInteger(n) && n >= 0 ? n : null
     },
 
     async listRefs(slug, prefix) {

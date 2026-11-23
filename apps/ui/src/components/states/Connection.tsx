@@ -101,3 +101,17 @@ export function ReconnectingBanner() {
     </div>
   )
 }
+
+/** Mock mode: this is seed data and nothing is sent anywhere. Always visible; "Connect" drops ?mock. */
+export function DemoBanner() {
+  const { mode } = useStore()
+  if (mode !== 'mock') return null
+  return (
+    <div role="status" aria-label="Demo data" className="flex items-center gap-3 border-b border-st-blocked/40 bg-st-blocked/12 px-5 py-2 text-[13px] text-st-blocked">
+      <span aria-hidden="true">▲</span>
+      <span className="font-semibold">Demo data · not connected to Colony</span>
+      <span className="text-ink-muted">Nothing you do here is sent to your agents.</span>
+      <a href="/?live" className="ml-auto rounded-sm border border-st-blocked/50 px-2.5 py-1 text-xs font-semibold text-st-blocked no-underline">Connect</a>
+    </div>
+  )
+}

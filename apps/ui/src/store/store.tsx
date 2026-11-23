@@ -47,6 +47,11 @@ const StoreCtx = createContext<Ctx | null>(null)
 
 const MAX_RECENT = 1000
 
+/** Commander actions that would be real in live mode; in the demo they get a "not sent" toast. */
+const DEMO_ONLY = new Set<Action['type']>([
+  'approveMerge', 'merge', 'requestChanges', 'message', 'resolveAlert', 'pause', 'resume', 'pauseAll', 'kill', 'restart', 'spawn', 'addProject',
+])
+
 function mockState(): State {
   return {
     projects: mock.projects, agents: mock.agents, quests: mock.quests, alerts: mock.alerts,
@@ -106,6 +111,9 @@ export function StoreProvider({ children, mode = 'live', simulate = true }: { ch
   // ── dispatch: local first, then the API (live) ──
   const dispatch = useCallback(async (a: Action): Promise<boolean> => {
     const prev = stateRef.current
+    if (mode !== 'live' && DEMO_ONLY.has(a.type)) {
+      rawDispatch({ type: 'toast', toast: { id: `demo-${Date.now()}`, title: 'Demo only — not sent', tone: 'heads_up', at: Date.now() } })
+    }
     if (mode === 'live' && a.type === 'downshift') {
       // Live: only the model changes; usage comes from the control plane.
       prev.agents.filter((x) => x.role !== 'orchestrator' && x.status !== 'waiting').forEach((x) => rawDispatch({ type: 'setModel', id: x.id, model: 'haiku-5.5' }))

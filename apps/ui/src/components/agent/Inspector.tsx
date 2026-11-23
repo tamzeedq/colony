@@ -15,7 +15,7 @@ import { Tabs, Segmented, Bar, inputCls } from '@/components/ui/controls'
 import { FeedRow } from '@/components/feed/ActivityFeed'
 import { Checkpoints } from '@/components/agent/Checkpoints'
 import { PreviewControl } from '@/components/agent/PreviewControl'
-import { containerCpu, cx, usd } from '@/lib/util'
+import { containerCpu, cx, usd, xpPct, XP_PER_LEVEL } from '@/lib/util'
 
 type Tab = 'feed' | 'term' | 'changes' | 'task' | 'config'
 
@@ -127,7 +127,7 @@ function Stats({ agent }: { agent: Agent }) {
     { l: 'Spend', v: usd(agent.spendTodayUsd), s: `/ ${usd(agent.budgetCapUsd)} cap`, p: (agent.spendTodayUsd / agent.budgetCapUsd) * 100, c: 'bg-ink-muted' },
     { l: 'Uptime', v: `${Math.floor(agent.uptimeSec / 3600)}h ${Math.floor((agent.uptimeSec % 3600) / 60)}m`, s: '', p: 100, c: 'bg-line' },
     { l: 'Container', v: cpu.label, s: `CPU · ${(agent.container.memMb / 1024).toFixed(1)} / ${agent.container.memLimitMb / 1024} GB`, p: cpu.pct, c: cpu.pct > 90 ? 'bg-st-blocked' : 'bg-ink-muted', t: `CPU ${cpu.detail} (${cpu.label} of its allowance)` },
-    { l: `Level ${agent.level}`, v: `${agent.questsDone}`, s: `quests · ${agent.xp}% to Lv ${agent.level + 1}`, p: agent.xp, c: 'bg-ink-soft' },
+    { l: `Level ${agent.level}`, v: `${agent.questsDone}`, s: `quests · ${agent.xp} / ${XP_PER_LEVEL} XP to Lv ${agent.level + 1}`, p: xpPct(agent.xp), c: 'bg-ink-soft' },
   ]
   return (
     <div className="grid grid-cols-3 gap-px border-b border-line-soft bg-line-soft md:grid-cols-6">
@@ -322,14 +322,6 @@ function ConfigPane({ agent }: { agent: Agent }) {
             <select value={model} onChange={(e) => { setModel(e.target.value); setSaved('') }} className={cx(inputCls, 'font-mono text-xs')}><ModelOptions current={agent.model} /></select>
           </label>
         : <label className="flex flex-col gap-1.5 text-xs text-ink-muted">Auto-compact context at<input defaultValue="85%" className={inputCls} /></label>}
-      <fieldset className="col-span-2 m-0 rounded-md border border-line px-3 py-2.5">
-        <legend className="px-1 text-xs text-ink-muted">Allowed tools</legend>
-        <div className="flex flex-wrap gap-3.5 text-[13px]">
-          {['read', 'edit', 'bash', 'supabase', 'webfetch', 'push-main'].map((t) => (
-            <label key={t}><input type="checkbox" defaultChecked={agent.allowedTools.includes(t)} className="accent-[var(--color-you)]" /> {t}</label>
-          ))}
-        </div>
-      </fieldset>
       <div className="col-span-2 flex items-center gap-3">
         <Button variant="primary" type="submit" disabled={saved === 'saving'}>{saved === 'saving' ? 'Saving…' : 'Save config'}</Button>
         {saved === 'ok' && <span className="text-xs text-st-done">✓ Saved · applies on next step</span>}
