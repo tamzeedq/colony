@@ -104,9 +104,15 @@ describe('surviving restarts', () => {
       const alert = [...c2.app.store.alerts.values()].find((x) => x.agentId === gone.id)!
       assert.equal(alert.severity, 'heads_up')
       assert.match(alert.title, /resumed after restart/)
-      // A paused agent is not meant to run: it is flagged, not resumed.
-      assert.equal(status(c2, paused.id), 'error')
+      // A paused agent is not meant to run: it stays paused (not resumed, not an error)…
+      assert.equal(status(c2, paused.id), 'paused')
+      assert.ok(![...c2.app.store.alerts.values()].some((x) => x.agentId === paused.id && !x.resolvedAt && x.kind === 'crash'), 'no crash alert for a paused agent')
       assert.notEqual(status(c2, kept.id), 'error')
+      // …and Resume starts its container again.
+      assert.ok(!infra.agents.get(paused.id))
+      await api(c2, 'POST', `/api/agents/${paused.id}/resume`)
+      await waitUntil(() => !!infra.agents.get(paused.id))
+      assert.equal(status(c2, paused.id), 'booting')
     } finally { await teardown(c2) }
   })
 

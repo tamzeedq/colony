@@ -22,6 +22,31 @@ The plan of record stays `docs/execution-plan.md`. This document is the backlog 
 
 ## Iteration 1: Prove it and keep it healthy (reliability)
 
+**Progress (2026-11-23, branch `iteration-1`):**
+- **Done:**
+  - CI workflow (typecheck, unit tests, UI build, LF check, Playwright e2e; a Docker job on manual trigger)
+  - 9 Playwright smoke tests (Inbox, HUD pause, roster, quest page, settings), passing
+  - Claude Code pinned (2.1.330), with "restart outdated agents"
+  - dead Spawn options removed ("Merge without approval" gone)
+  - real Level/XP progression
+  - demo-mode banner, and "Demo only, not sent" for actions taken on demo data
+  - "N merged commits not on GitHub" indicator
+  - `npm start` opens the Ops Deck
+  - base-map links stay aligned on large screens; pausing shown on the map
+- **Verified for real:**
+  - `npm run stop`: control plane, UI, Supabase and Colony containers stopped; other stacks untouched
+  - keep-awake on and off: helper starts and exits
+  - Docker Desktop auto-start (it exposed a Docker Desktop stale-socket bug, fixed by hand)
+  - paused agents now stay paused across restarts, and Resume restarts their container
+- **Left:**
+  - the scripted real-agent check (`npm run e2e:agents`)
+  - GitHub publish with a real token
+  - `gen_types` against the real CLI
+  - SCREENS regen in CI
+  - splitting the largest files
+  - the CI run on GitHub itself, which happens on push
+
+
 *Why:* several features are built and unit-tested but have never run for real, and the repo has no CI. A regression today is only found by the commander.
 
 1. **CI for the Colony repo** (GitHub Actions on push and PR):

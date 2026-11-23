@@ -60,6 +60,13 @@ export async function reconcile(store: Store, infra: InfraDriver, agents: AgentM
       } catch (e) {
         log.warn(`could not resume ${id}: ${(e as Error).message}`)
       }
+    } else if (rec.internal.desired === 'paused' && rec.agent.status !== 'done') {
+      // Paused on purpose (by you, a budget or the plan guard) and its container was stopped,
+      // e.g. by `npm run stop`: that's still "paused", not a crash. Resume restarts it.
+      store.patchAgent(id, {
+        status: 'paused', currentAction: 'Paused · container stopped (Resume restarts it)',
+        container: { ...rec.agent.container, ...(c ? { name: c.name } : {}), health: 'down', cpuPct: 0, memMb: 0 },
+      })
     } else if (rec.agent.status !== 'error') {
       store.patchAgent(id, {
         status: 'error', currentAction: c ? 'Container stopped' : 'Container missing',

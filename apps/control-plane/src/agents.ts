@@ -419,6 +419,12 @@ export class AgentManager {
 
   resume(agentId: string) {
     const rec = this.get(agentId)
+    // Paused with its container stopped (after a restart or `npm run stop`): start it again.
+    if (!this.conns.has(agentId) && rec.agent.container.health === 'down' && rec.agent.status === 'paused') {
+      this.store.patchAgent(agentId, { currentAction: 'Restarting' }, { desired: 'run', pausedBy: undefined })
+      void this.restart(agentId).catch((e) => this.log.warn(`resume ${agentId}: ${(e as Error).message}`))
+      return this.store.toAgent(rec)
+    }
     const sent = this.send(agentId, { type: 'resume' })
     // Only a paused agent changes status; one that was still pausing just keeps running.
     const status = rec.agent.status === 'paused' ? (sent ? 'idle' : 'booting') : rec.agent.status
