@@ -126,9 +126,20 @@ The plan of record stays `docs/execution-plan.md`. This document is the backlog 
 14. **"Open this base in Claude Code".** It fetches the base via Use locally, then writes a context file (goal, board, base memory, open merge requests, recent decisions), so a separate Claude Code session starts informed rather than cold.
 15. **A `colony` CLI (and MCP server for the commander).** `colony status`, `colony inbox`, `colony quest add "<title>" --base readable`, `colony approve <mr>` (still a recorded human approval), `colony publish <base>`. A Claude Code session or a terminal can then drive Colony without the browser, and status lines and hooks can show "N need you".
 
+### Housekeeping: finished work doesn't pile up forever
+18. **Archive, don't hoard.** Done and cancelled quests auto-archive after N days (default 7). The Done lane shows recent ones only, with "Show archived" to browse or restore them, and an **Archive finished** button per base.
+19. **Inbox and history retention:**
+    - **Clear dismissed and resolved** (with a count and a confirmation), plus a retention setting; resolved items already expire after 30 days by default.
+    - Old merged requests drop out of lists but stay linked from their quest.
+    - The activity log gets a retention period.
+20. **Settings → Housekeeping:**
+    - the retention periods;
+    - **Clean up now**, which previews what it will archive or remove;
+    - permanent deletion of old archived items, only after confirmation.
+
 ### Fewer clicks for routine decisions
-16. **Batch review.** Approve several small, verified merges in one pass: each with its summary and acceptance, each recorded as your approval. Similarly, answer several low-stakes agent questions at once.
-17. **Remembered answers.** When you answer a recurring question ("use Supabase Storage", "prefer zod"), offer "remember for this base". It goes into base memory, and the orchestrator stops asking.
+21. **Batch review.** Approve several small, verified merges in one pass: each with its summary and acceptance, each recorded as your approval. Similarly, answer several low-stakes agent questions at once.
+22. **Remembered answers.** When you answer a recurring question ("use Supabase Storage", "prefer zod"), offer "remember for this base". It goes into base memory, and the orchestrator stops asking.
 
 **Exit:**
 - closing and reopening the app (or the machine) loses no pairing and no context;
