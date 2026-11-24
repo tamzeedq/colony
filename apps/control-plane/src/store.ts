@@ -240,6 +240,29 @@ export class Store {
     return this.db.all('SELECT json FROM events WHERE agent_id = ? ORDER BY seq DESC LIMIT ?', agentId, limit)
       .map((r) => JSON.parse(String(r.json)) as ActivityEvent).reverse()
   }
+  /** Remove every resolved alert now (optionally only one base's). Returns how many. */
+  clearResolvedAlerts(projectId?: string): number {
+    let n = 0
+    for (const [id, a] of this.alerts) {
+      if (!a.resolvedAt || (projectId && a.projectId !== projectId)) continue
+      this.alerts.delete(id); n++
+    }
+    if (n) {
+      if (projectId) this.db.run('DELETE FROM alerts WHERE resolved_at IS NOT NULL AND project_id = ?', projectId)
+      else this.db.run('DELETE FROM alerts WHERE resolved_at IS NOT NULL')
+      this.broadcastSnapshot()
+    }
+    return n
+  }
+  /** Activity events older than `days`: count, or delete. */
+  countEventsBefore(cutoffIso: string): number {
+    return Number(this.db.get('SELECT COUNT(*) AS n FROM events WHERE at < ?', cutoffIso)?.n ?? 0)
+  }
+  pruneEventsBefore(cutoffIso: string): number {
+    const n = this.countEventsBefore(cutoffIso)
+    if (n) this.db.run('DELETE FROM events WHERE at < ?', cutoffIso)
+    return n
+  }
   recentEvents(limit = 200): ActivityEvent[] {
     return this.db.all('SELECT json FROM events ORDER BY seq DESC LIMIT ?', limit)
       .map((r) => JSON.parse(String(r.json)) as ActivityEvent).reverse()
@@ -279,8 +302,12 @@ export class Store {
     return next
   }
   /** Resolved alerts are kept for ALERT_RETENTION_DAYS, then removed (boot and day roll). */
+  /** Retention for resolved alerts (Settings → Housekeeping); 0 = keep forever. */
+  alertRetentionDays = () => ALERT_RETENTION_DAYS
   pruneResolvedAlerts(now = Date.now()): number {
-    const cutoff = new Date(now - ALERT_RETENTION_DAYS * 86_400_000).toISOString()
+    const days = this.alertRetentionDays()
+    if (!days) return 0
+    const cutoff = new Date(now - days * 86_400_000).toISOString()
     let n = 0
     for (const [id, a] of this.alerts) if (a.resolvedAt && a.resolvedAt < cutoff) { this.alerts.delete(id); n++ }
     if (n) this.db.run('DELETE FROM alerts WHERE resolved_at IS NOT NULL AND resolved_at < ?', cutoff)
@@ -312,6 +339,12 @@ export class Store {
 
   // ── quests ──
   saveQuest(q: Quest) {
+    // Housekeeping bookkeeping: when a quest finishes, and un-archive it if it's reopened.
+    if ((q.status === 'done' || q.status === 'failed') && !q.finishedAt) q = { ...q, finishedAt: nowIso() }
+    else if (q.status !== 'done' && q.status !== 'failed' && (q.finishedAt || q.archivedAt)) {
+      const { finishedAt: _f, archivedAt: _a, ...rest } = q
+      q = rest
+    }
     this.quests.set(q.id, q)
     this.db.run(
       `INSERT INTO quests(id, project_id, json) VALUES(?, ?, ?)

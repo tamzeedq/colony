@@ -225,6 +225,10 @@ export interface Quest {
   acceptance: AcceptanceItem[]
   /** QA agent asked to verify the agent-checkable criteria (request_verification). */
   verifierId?: ID
+  /** When it became done or failed (set by the control plane). */
+  finishedAt?: ISODate
+  /** Archived: hidden from the board and from agents' list_tasks; restorable (housekeeping). */
+  archivedAt?: ISODate
   xpReward: number
   createdAt: ISODate
 }
@@ -332,3 +336,15 @@ export function minutesToSessionLimit(u: PlanUsage): number | null {
   if (u.session.ratePctPerHour <= 0) return null
   return ((100 - u.session.usedPct) / u.session.ratePctPerHour) * 60
 }
+
+/** Housekeeping retention (Settings → Housekeeping). 0 = never. */
+export interface HousekeepingSettings {
+  /** Archive done/cancelled quests this many days after they finished. */
+  archiveQuestsAfterDays: number
+  /** Remove dismissed/resolved Inbox items this many days after they were resolved. */
+  keepResolvedAlertsDays: number
+  /** Remove activity events older than this many days. */
+  keepEventsDays: number
+}
+
+export interface HousekeepingPreview { questsToArchive: number; alertsToRemove: number; eventsToRemove: number }

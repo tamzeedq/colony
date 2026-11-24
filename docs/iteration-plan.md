@@ -127,6 +127,8 @@ The plan of record stays `docs/execution-plan.md`. This document is the backlog 
 15. **A `colony` CLI (and MCP server for the commander).** `colony status`, `colony inbox`, `colony quest add "<title>" --base readable`, `colony approve <mr>` (still a recorded human approval), `colony publish <base>`. A Claude Code session or a terminal can then drive Colony without the browser, and status lines and hooks can show "N need you".
 
 ### Housekeeping: finished work doesn't pile up forever
+*Status (2026-11-23, branch `iteration-1`): built. Done: auto-archive with restore; Archive finished per base; Done lane shows the 8 most recent; Clear dismissed & resolved with confirmation; retention for alerts and events; Settings → Housekeeping with preview and Clean up now; archived quests hidden from `list_tasks`. Not yet: old merge requests dropping out of lists, and permanently deleting archived quests.*
+
 18. **Archive, don't hoard.** Done and cancelled quests auto-archive after N days (default 7). The Done lane shows recent ones only, with "Show archived" to browse or restore them, and an **Archive finished** button per base.
 19. **Inbox and history retention:**
     - **Clear dismissed and resolved** (with a count and a confirmation), plus a retention setting; resolved items already expire after 30 days by default.

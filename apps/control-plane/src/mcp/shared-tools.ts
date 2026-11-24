@@ -6,9 +6,11 @@ export function sharedTools(ctx: ToolContext): Tool[] {
   return [
     {
       name: 'list_tasks', roles: 'all',
-      description: 'List the quests in this project, optionally filtered by status.',
-      inputSchema: obj({ status: { type: 'string', enum: ['backlog', 'in_progress', 'in_review', 'done', 'failed', 'blocked'] } }),
-      run: (a, me) => store.projectQuests(me.agent.projectId).filter((q) => !a.status || q.status === a.status).map((q) => questView(q, store)),
+      description: 'List the quests in this project, optionally filtered by status. Archived (old finished) quests are left out unless include_archived is true.',
+      inputSchema: obj({ status: { type: 'string', enum: ['backlog', 'in_progress', 'in_review', 'done', 'failed', 'blocked'] }, include_archived: { type: 'boolean' } }),
+      run: (a, me) => store.projectQuests(me.agent.projectId)
+        .filter((q) => (!a.status || q.status === a.status) && (a.include_archived === true || !q.archivedAt))
+        .map((q) => questView(q, store)),
     },
     {
       name: 'get_backend', roles: 'all',

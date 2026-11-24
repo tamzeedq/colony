@@ -1,5 +1,5 @@
 // Typed calls for every control-plane route the UI uses (docs/phase2.md "UI action → API").
-import type { ActivityEvent, Agent, Alert, AlertResolution, Analytics, AnalyticsDays, GithubConfig, GithubTokenStatus, Guards, ID, KeepAwakeMode, KeepAwakeState, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
+import type { ActivityEvent, Agent, Alert, AlertResolution, Analytics, AnalyticsDays, GithubConfig, GithubTokenStatus, Guards, HousekeepingPreview, HousekeepingSettings, ID, KeepAwakeMode, KeepAwakeState, MergeRequest, ModelId, Project, ProviderId, ProviderView, Quest, RoleId, Snapshot, SupabaseDetails, SupabaseInfo } from '@/types/colony'
 import { api, apiText, enc } from './client'
 
 export interface SpawnInput { role: RoleId; model?: ModelId; callsign?: string; task?: string; budgetCapUsd?: number; rolePrompt?: string; iconSeed?: string }
@@ -108,6 +108,14 @@ export const endpoints = {
   rotateAdminToken: () => api<{ ok: true; pairingHint: string; envOverride?: boolean }>('POST', '/api/admin/rotate-token'),
   keepAwake: () => api<KeepAwakeState>('GET', '/api/keep-awake'),
   setKeepAwake: (mode: KeepAwakeMode) => api<KeepAwakeState>('PUT', '/api/keep-awake', { mode }),
+
+  // Housekeeping (iteration 2 #18–20)
+  housekeeping: () => api<{ settings: HousekeepingSettings; preview: HousekeepingPreview }>('GET', '/api/housekeeping'),
+  setHousekeeping: (patch: Partial<HousekeepingSettings>) => api<{ settings: HousekeepingSettings; preview: HousekeepingPreview }>('PUT', '/api/housekeeping', patch),
+  runHousekeeping: () => api<HousekeepingPreview>('POST', '/api/housekeeping/run'),
+  archiveFinished: (projectId: ID) => api<{ archived: number }>('POST', `/api/projects/${enc(projectId)}/quests/archive-finished`),
+  setQuestArchived: (questId: ID, archived: boolean) => api<Quest>('POST', `/api/quests/${enc(questId)}/archive`, { archived }),
+  clearResolvedAlerts: (projectId?: ID) => api<{ removed: number }>('DELETE', `/api/alerts/resolved${projectId ? `?projectId=${enc(projectId)}` : ''}`),
 }
 
 /** GET /api/projects/:id/github/status: `ahead` is null when unknown (never published). */

@@ -10,10 +10,11 @@ import { Docker } from './settings/DockerHost'
 import { Teams } from './settings/Teams'
 import { Roles } from './settings/Roles'
 import { Keys } from './settings/Keys'
+import { Housekeeping } from './settings/Housekeeping'
 
 const SECTIONS = [
   { id: 'limits', g: '◷', label: 'Limits & budgets' }, { id: 'spend', g: '▤', label: 'Spend & usage' },
-  { id: 'alerts', g: '♪', label: 'Alerts & sound' },
+  { id: 'alerts', g: '♪', label: 'Alerts & sound' }, { id: 'housekeeping', g: '▣', label: 'Housekeeping' },
   { id: 'providers', g: '◈', label: 'Providers & keys' }, { id: 'github', g: '⑂', label: 'GitHub' }, { id: 'security', g: '⛨', label: 'Security' },
   { id: 'docker', g: '▣', label: 'Docker & host' }, { id: 'teams', g: '⬡', label: 'Team templates' },
   { id: 'roles', g: '☰', label: 'Role library' }, { id: 'keys', g: '⌨', label: 'Keyboard' },
@@ -37,6 +38,7 @@ export function Settings() {
         {section === 'limits' && <Limits />}
         {section === 'spend' && <SpendUsage />}
         {section === 'alerts' && <AlertsSection />}
+        {section === 'housekeeping' && <Housekeeping />}
         {section === 'providers' && <Providers />}
         {section === 'github' && <GithubSettings />}
         {section === 'security' && <SecuritySettings />}

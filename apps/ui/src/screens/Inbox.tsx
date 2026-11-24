@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Alert, AlertKind } from '@/types/colony'
 import { useStore } from '@/store/store'
+import { endpoints } from '@/api/endpoints'
 import { AlertItem, KIND } from '@/components/alerts/AlertItem'
 import { UndoSnackbar, useDismiss } from '@/components/alerts/dismiss'
 import { KeyHint } from '@/components/ui/primitives'
@@ -10,8 +11,9 @@ import { ago, cx } from '@/lib/util'
 const RANK: Record<AlertKind, number> = { crash: 0, host_down: 0, approval: 1, question: 2, loop: 3, budget: 4, limit_pace: 5 }
 
 export function Inbox() {
-  const { state, dispatch } = useStore()
+  const { state, dispatch, mode } = useStore()
   const loc = useLocation()
+  const [confirmClear, setConfirmClear] = useState(false)
   const [filter, setFilter] = useState<AlertKind | 'all'>('all')
   const [showResolved, setShowResolved] = useState(false)
   const open = state.alerts.filter((a) => !a.resolvedAt).sort((a, b) => RANK[a.kind] - RANK[b.kind])
@@ -103,7 +105,17 @@ export function Inbox() {
                 <button type="button" onClick={() => reopen(a)} className="rounded-md border border-line px-2.5 py-1 text-xs">Reopen</button>
               </div>
             ))}
-            {!past.length && <div className="text-xs text-ink-dim">Nothing matches. Resolved alerts are kept for 30 days.</div>}
+            {!past.length && <div className="text-xs text-ink-dim">Nothing matches.</div>}
+            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-dim">
+              <span>Resolved items are removed automatically after the retention set in Settings → Housekeeping.</span>
+              {mode === 'live' && resolved.length > 0 && (confirmClear
+                ? <span className="ml-auto flex items-center gap-1.5">
+                    <span className="text-ink-muted">Permanently remove {baseF === 'all' ? resolved.length : resolved.filter((a) => a.projectId === baseF).length} dismissed &amp; resolved item(s){baseF === 'all' ? '' : ' for this base'}? This can't be undone.</span>
+                    <button type="button" onClick={async () => { await endpoints.clearResolvedAlerts(baseF === 'all' ? undefined : baseF); setConfirmClear(false) }} className="rounded-sm bg-st-error px-2.5 py-1 font-semibold text-ground">Remove</button>
+                    <button type="button" onClick={() => setConfirmClear(false)} className="rounded-sm border border-line px-2.5 py-1">Cancel</button>
+                  </span>
+                : <button type="button" onClick={() => setConfirmClear(true)} className="ml-auto rounded-md border border-line px-2.5 py-1 text-ink-soft">Clear {baseF === 'all' ? '' : 'this base\'s '}dismissed &amp; resolved ({baseF === 'all' ? resolved.length : resolved.filter((a) => a.projectId === baseF).length})</button>)}
+            </div>
           </div>
         )}
         <div className="text-xs text-ink-dim"><KeyHint>J / K</KeyHint> move · <KeyHint>A</KeyHint> approve · <KeyHint>R</KeyHint> reply · <KeyHint>E</KeyHint> dismiss · <KeyHint>↵</KeyHint> open agent</div>
